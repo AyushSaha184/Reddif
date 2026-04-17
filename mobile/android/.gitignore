@@ -1,0 +1,41 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Signing files
+*.jks
+*.keystore
+!debug.keystore
+
+# Google Services (Firebase) - contains API keys, do NOT commit
+# google-services.json
+
+# Captures
+captures/
+
+# IntelliJ
+*.iml
+.idea/
+
+# External native build folder
+.cxx/

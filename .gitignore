@@ -1,0 +1,34 @@
+# Project-wide
+*.log
+.env
+/venv
+
+# Backend
+backend/logs/
+backend/*.db
+backend/firebase-service-account.json
+
+# Mobile
+mobile/node_modules/
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/gradle-home/
+mobile/.gradle-home*/
+**/.gradle-home*/
+**/gradle-home/
+mobile/android/app/src/main/assets/
+mobile/android/app/src/main/res/drawable*/node_modules_*.png
+mobile/android/app/google-services.json
+mobile/*.jks
+mobile/*.keystore
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# External SDK (Android)
+C:/platform-tools-latest-windows/

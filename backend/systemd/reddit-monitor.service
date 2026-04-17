@@ -1,0 +1,16 @@
+[Unit]
+Description=Reddit Lead Monitor Backend
+After=network.target
+
+[Service]
+Type=simple
+User=redditmonitor
+WorkingDirectory=/opt/reddit-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/opt/reddit-monitor/venv/bin
+ExecStart=/opt/reddit-monitor/venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

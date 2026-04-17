@@ -1,0 +1,66 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# node_modules
+node_modules/
+
+# Metro
+.metro-health-check*
+
+# Bundle artifact
+*.jsbundle
+
+# Android
+android/app/build/
+android/.gradle/
+android/local.properties
+android/*.keystore
+!android/app/debug.keystore
+
+# iOS (not targeting iOS, but keeping for completeness)
+ios/Pods/
+ios/build/
+ios/*.xcodeproj
+ios/*.xcworkspace
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Mobile specific
+android/app/google-services.json
+*.jks
+*.keystore
