@@ -7,11 +7,11 @@ import {
   ScrollView,
   Linking,
   Share,
-  Clipboard,
   Dimensions,
   Animated,
   Image,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { Post } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { useExpiry } from '../hooks/useExpiry';
@@ -81,11 +81,10 @@ export function PostCard({ post, isActive }: PostCardProps) {
   };
 
   const handleShare = async () => {
-    const deepLink = `wizardleads://post/${post.id}`;
     try {
       await Share.share({
-        message: `Check out this Photoshop Request: ${post.title}\n${deepLink}`,
-        url: deepLink,
+        message: `Check out this Photoshop Request: ${post.title}\n${post.permalink}`,
+        url: post.permalink,
       });
     } catch (error) {
       console.error('Share error:', error);
@@ -156,11 +155,9 @@ export function PostCard({ post, isActive }: PostCardProps) {
               <Icon name="link" size={20} color="#666" />
             </TouchableOpacity>
 
-            {tracked && (
-              <TouchableOpacity style={styles.solvedButton} onPress={handleMarkSolved}>
-                <Icon name="check" size={20} color="#4CD964" />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={styles.solvedButton} onPress={handleMarkSolved}>
+              <Icon name="check" size={20} color={tracked ? "#4CD964" : "#999"} />
+            </TouchableOpacity>
           </View>
         </View>
       </TouchableOpacity>

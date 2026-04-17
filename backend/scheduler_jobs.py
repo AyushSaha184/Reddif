@@ -20,7 +20,7 @@ class SchedulerJobs:
     def __init__(
         self,
         state_manager: "StateManager",
-        fcm_service: "FCMService",
+        fcm_service: "FCMService | None",
         reddit_client: "RedditClient",
     ):
         self.state_manager = state_manager
@@ -57,7 +57,8 @@ class SchedulerJobs:
                 # Send EXPIRED notification for each
                 for post_id in expired_ids:
                     try:
-                        self.fcm_service.send_expired_notification(post_id)
+                        if self.fcm_service:
+                            self.fcm_service.send_expired_notification(post_id)
                     except Exception as e:
                         logger.error(
                             "expired_notification_failed", post_id=post_id, error=str(e)
@@ -106,20 +107,22 @@ class SchedulerJobs:
                         self.state_manager.update_post_flair(post.post_id, new_flair)
 
                         # Send FCM notification
-                        self.fcm_service.send_flair_update(
-                            post_id=post.post_id,
-                            new_flair=new_flair,
-                            old_flair=old_flair,
-                        )
+                        if self.fcm_service:
+                            self.fcm_service.send_flair_update(
+                                post_id=post.post_id,
+                                new_flair=new_flair,
+                                old_flair=old_flair,
+                            )
 
                         # If new flair is "Solved" or similar, update status
                         if "solved" in new_flair.lower():
                             self.state_manager.update_post_status(
                                 post.post_id, "solved"
                             )
-                            self.fcm_service.send_solved_notification(
-                                post_id=post.post_id, flair=new_flair
-                            )
+                            if self.fcm_service:
+                                self.fcm_service.send_solved_notification(
+                                    post_id=post.post_id, flair=new_flair
+                                )
 
                         logger.info(
                             "flair_updated_successfully",

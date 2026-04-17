@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,10 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import {useAppStore} from '../store/useAppStore';
-import {fcmService} from '../services/fcmService';
-import {apiService, getBackendUrl, setBackendUrl} from '../services/apiService';
+import { useAppStore } from '../store/useAppStore';
+import { fcmService } from '../services/fcmService';
+import { apiService, getBackendUrl, setBackendUrl } from '../services/apiService';
+import { setHmacSecret } from '../services/hmacService';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const ACCENT_COLORS = [
@@ -28,12 +29,14 @@ const ACCENT_COLORS = [
 ];
 
 export function SettingsScreen() {
-  const {settings, updateSettings} = useAppStore();
+  const { settings, updateSettings } = useAppStore();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [backendUrl, setBackendUrlState] = useState('');
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [urlInput, setUrlInput] = useState('');
-  
+  const [showSecretModal, setShowSecretModal] = useState(false);
+  const [secretInput, setSecretInput] = useState('');
+
   // Load current backend URL on mount
   useEffect(() => {
     const loadUrl = async () => {
@@ -44,11 +47,11 @@ export function SettingsScreen() {
   }, []);
 
   const handleThemeChange = (theme: 'system' | 'dark' | 'amoled') => {
-    updateSettings({theme});
+    updateSettings({ theme });
   };
 
   const handleAccentChange = (color: string) => {
-    updateSettings({accentColor: color});
+    updateSettings({ accentColor: color });
   };
 
   const handleNotifToggle = async (key: keyof typeof settings.notifToggles) => {
@@ -56,14 +59,14 @@ export function SettingsScreen() {
       ...settings.notifToggles,
       [key]: !settings.notifToggles[key],
     };
-    updateSettings({notifToggles: newToggles});
+    updateSettings({ notifToggles: newToggles });
     await fcmService.subscribeToTopics();
   };
 
   const openNotificationSettings = () => {
     Linking.openSettings();
   };
-  
+
   const handleSaveBackendUrl = async () => {
     try {
       const trimmedUrl = urlInput.trim();
@@ -71,13 +74,29 @@ export function SettingsScreen() {
         Alert.alert('Error', 'Please enter a valid URL');
         return;
       }
-      
+
       await setBackendUrl(trimmedUrl);
       setBackendUrlState(trimmedUrl);
       setShowUrlModal(false);
       Alert.alert('Success', 'Backend URL updated. Restart the app to take effect.');
     } catch (error) {
       Alert.alert('Error', 'Invalid URL format. Must start with http:// or https://');
+    }
+  };
+
+  const handleSaveHmacSecret = async () => {
+    try {
+      const trimmedSecret = secretInput.trim();
+      if (!trimmedSecret) {
+        Alert.alert('Error', 'Please enter a secret');
+        return;
+      }
+
+      await setHmacSecret(trimmedSecret);
+      setShowSecretModal(false);
+      Alert.alert('Success', 'HMAC secret saved. Requests will be signed.');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save HMAC secret');
     }
   };
 
@@ -94,11 +113,11 @@ export function SettingsScreen() {
 
   return (
     <ScrollView
-      style={[styles.container, {backgroundColor: getThemeBackground()}]}
+      style={[styles.container, { backgroundColor: getThemeBackground() }]}
       contentContainerStyle={styles.content}
     >
       <Text style={styles.sectionTitle}>Notifications</Text>
-      
+
       <View style={styles.card}>
         <View style={styles.row}>
           <Text style={styles.label}>Paid - No AI</Text>
@@ -108,7 +127,7 @@ export function SettingsScreen() {
             thumbColor={settings.accentColor}
           />
         </View>
-        
+
         <View style={styles.row}>
           <Text style={styles.label}>Paid - AI OK</Text>
           <Switch
@@ -117,7 +136,7 @@ export function SettingsScreen() {
             thumbColor={settings.accentColor}
           />
         </View>
-        
+
         <View style={styles.row}>
           <Text style={styles.label}>Free</Text>
           <Switch
@@ -129,7 +148,7 @@ export function SettingsScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>Theme</Text>
-      
+
       <View style={styles.card}>
         <TouchableOpacity
           style={styles.themeRow}
@@ -140,7 +159,7 @@ export function SettingsScreen() {
             <Icon name="check" size={20} color={settings.accentColor} />
           )}
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.themeRow}
           onPress={() => handleThemeChange('dark')}
@@ -150,7 +169,7 @@ export function SettingsScreen() {
             <Icon name="check" size={20} color={settings.accentColor} />
           )}
         </TouchableOpacity>
-        
+
         <TouchableOpacity
           style={styles.themeRow}
           onPress={() => handleThemeChange('amoled')}
@@ -163,7 +182,7 @@ export function SettingsScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>Accent Color</Text>
-      
+
       <View style={styles.card}>
         <View style={styles.colorGrid}>
           {ACCENT_COLORS.map((color) => (
@@ -171,7 +190,7 @@ export function SettingsScreen() {
               key={color}
               style={[
                 styles.colorButton,
-                {backgroundColor: color},
+                { backgroundColor: color },
                 settings.accentColor === color && styles.selectedColor,
               ]}
               onPress={() => handleAccentChange(color)}
@@ -185,7 +204,7 @@ export function SettingsScreen() {
       </View>
 
       <Text style={styles.sectionTitle}>Backend Connection</Text>
-      
+
       <View style={styles.card}>
         <TouchableOpacity
           style={styles.themeRow}
@@ -200,31 +219,40 @@ export function SettingsScreen() {
           </View>
           <Icon name="pencil" size={20} color={settings.accentColor} />
         </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        <TouchableOpacity
+          style={styles.themeRow}
+          onPress={() => setShowSecretModal(true)}
+        >
+          <View>
+            <Text style={styles.label}>HMAC Secret</Text>
+            <Text style={styles.sublabel}>Required for authenticated requests</Text>
+          </View>
+          <Icon name="key" size={20} color={settings.accentColor} />
+        </TouchableOpacity>
       </View>
 
       <Text style={styles.sectionTitle}>Display</Text>
-      
+
       <View style={styles.card}>
         <View style={styles.row}>
           <Text style={styles.label}>Show Body Text</Text>
           <Switch
             value={settings.showBody}
-            onValueChange={(value) => updateSettings({showBody: value})}
+            onValueChange={(value) => updateSettings({ showBody: value })}
             thumbColor={settings.accentColor}
           />
         </View>
-        
+
         <View style={styles.row}>
           <Text style={styles.label}>Haptic Feedback</Text>
           <Switch
             value={settings.hapticFeedback}
-            onValueChange={(value) => updateSettings({hapticFeedback: value})}
+            onValueChange={(value) => updateSettings({ hapticFeedback: value })}
             thumbColor={settings.accentColor}
           />
-        </View>
-        
-        <View style={styles.row}>
-          <Text style={styles.label}>Font Size: {settings.fontSize}pt</Text>
         </View>
       </View>
 
@@ -237,6 +265,42 @@ export function SettingsScreen() {
         </Text>
         <Icon name="open-in-new" size={16} color={settings.accentColor} />
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.systemButton}
+        onPress={async () => {
+          const redditUrl = 'reddit://';
+          const playStoreUrl = 'market://details?id=com.reddit.frontpage';
+          try {
+            const supported = await Linking.canOpenURL(redditUrl);
+            if (supported) {
+              await Linking.openURL(redditUrl);
+            } else {
+              await Linking.openURL(playStoreUrl);
+            }
+          } catch (e) {
+            await Linking.openURL(playStoreUrl);
+          }
+        }}
+      >
+        <Text style={styles.systemButtonText}>
+          Open Reddit
+        </Text>
+        <Icon name="reddit" size={16} color={settings.accentColor} />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.systemButton, { backgroundColor: settings.accentColor, marginTop: 16 }]}
+        onPress={() => {
+          Alert.alert("Saved", "Settings have been saved successfully.");
+        }}
+      >
+        <Text style={[styles.systemButtonText, { color: '#FFFFFF' }]}>
+          Save Settings
+        </Text>
+        <Icon name="content-save" size={16} color="#FFFFFF" />
+      </TouchableOpacity>
+      <View style={{ height: 20 }} />
 
       {/* Backend URL Modal */}
       <Modal
@@ -277,6 +341,47 @@ export function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* HMAC Secret Modal */}
+      <Modal
+        visible={showSecretModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSecretModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Enter HMAC Secret</Text>
+            <Text style={styles.modalSubtitle}>
+              Must match the secret configured on your backend
+            </Text>
+            <TextInput
+              style={styles.urlInput}
+              value={secretInput}
+              onChangeText={setSecretInput}
+              placeholder="your-shared-secret"
+              placeholderTextColor="#666666"
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowSecretModal(false)}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={handleSaveHmacSecret}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -299,9 +404,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   card: {
-    backgroundColor: '#1E1E1E',
-    borderRadius: 12,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 16,
     padding: 8,
+    overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',

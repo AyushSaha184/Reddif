@@ -76,21 +76,28 @@ apiClient.interceptors.request.use(
   async (config) => {
     const baseUrl = await getBackendUrl();
     config.baseURL = getSecureUrl(baseUrl);
-    
-    const timestamp = Math.floor(Date.now() / 1000);
-    const nonce = generateNonce();
-    
-    config.headers['X-Timestamp'] = timestamp.toString();
-    config.headers['X-Nonce'] = nonce;
-    
+
+    const headers = config.headers ?? {};
+    let timestamp = headers['X-Timestamp'] as string | undefined;
+    let nonce = headers['X-Nonce'] as string | undefined;
+
+    if (!timestamp || !nonce) {
+      timestamp = Math.floor(Date.now() / 1000).toString();
+      nonce = generateNonce();
+      headers['X-Timestamp'] = timestamp;
+      headers['X-Nonce'] = nonce;
+    }
+
+    config.headers = headers;
+
     logger.info('api_request', {
       method: config.method,
       url: config.url,
       baseUrl: config.baseURL,
       timestamp,
-      nonce: nonce.substring(0, 8) + '...'
+      nonce: nonce.substring(0, 8) + '...',
     });
-    
+
     return config;
   },
   (error) => {

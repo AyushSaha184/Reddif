@@ -72,13 +72,13 @@ class FCMService:
             # Build data payload
             data_payload = {
                 "type": "NEW_POST",
-                "post_id": post_id,
+                "postId": post_id,
                 "flair": flair,
                 "title": title,
                 "permalink": permalink,
-                "image_urls": json.dumps(image_urls),
-                "detected_budget": detected_budget or "",
-                "created_at": str(created_at),
+                "imageUrls": json.dumps(image_urls),
+                "detectedBudget": detected_budget or "",
+                "createdAt": str(created_at),
             }
 
             message = messaging.Message(
@@ -129,8 +129,8 @@ class FCMService:
             message = messaging.Message(
                 data={
                     "type": "FLAIR_UPDATE",
-                    "post_id": post_id,
-                    "new_flair": new_flair,
+                    "postId": post_id,
+                    "newFlair": new_flair,
                 },
                 android=messaging.AndroidConfig(priority="high", direct_boot_ok=True),
                 topic=topic,
@@ -164,7 +164,7 @@ class FCMService:
 
             for topic in topics:
                 message = messaging.Message(
-                    data={"type": "EXPIRED", "post_id": post_id},
+                    data={"type": "EXPIRED", "postId": post_id},
                     android=messaging.AndroidConfig(
                         priority="high", direct_boot_ok=True
                     ),
@@ -201,7 +201,7 @@ class FCMService:
 
         try:
             message = messaging.Message(
-                data={"type": "SOLVED", "post_id": post_id, "status": "solved"},
+                data={"type": "SOLVED", "postId": post_id, "status": "solved"},
                 android=messaging.AndroidConfig(priority="high", direct_boot_ok=True),
                 topic=topic,
             )

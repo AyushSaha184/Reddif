@@ -41,7 +41,7 @@
         <!-- Firebase Cloud Messaging default channel -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="reddif_leads"
+            android:value="reddit-leads"
             tools:replace="android:value" />
 
         <!-- Default notification icon (uses app icon) -->

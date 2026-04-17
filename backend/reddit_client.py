@@ -187,9 +187,6 @@ class RedditClient:
                 if post_id in self._seen_posts:
                     continue
 
-                # Mark as seen
-                self._seen_posts.add(post_id)
-
                 # Parse the post
                 parsed = self._parse_post(post_data)
                 if parsed:
@@ -228,6 +225,8 @@ class RedditClient:
                 for post in posts:
                     try:
                         self.on_new_post(post)
+                        # Mark as seen only after successful processing
+                        self._seen_posts.add(post.post_id)
                     except Exception as e:
                         logger.error(
                             "callback_failed", post_id=post.post_id, error=str(e)

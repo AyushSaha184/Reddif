@@ -19,7 +19,24 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from fcm_service import FCMService
-from hmac_auth import create_limiter, get_hmac_auth, verify_hmac_signature, HMACAuth
+from hmac_auth import (
+    create_limiter,
+    get_hmac_auth,
+    verify_hmac_signature,
+    HMACAuth,
+    clean_expired_nonces,
+)
+
+
+def create_hmac_verifier(hmac_auth: HMACAuth):
+    """Create a dependency that captures hmac_auth properly."""
+
+    async def verify(request: Request) -> bool:
+        return await verify_hmac_signature(request, hmac_auth)
+
+    return verify
+
+
 from reddit_client import RedditClient, ParsedSubmission
 from scheduler_jobs import SchedulerJobs
 from state_manager import Post, StateManager
@@ -71,6 +88,7 @@ logger = structlog.get_logger(__name__)
 # Initialize services
 state_manager = StateManager()
 hmac_auth = get_hmac_auth(CONFIG["hmac_secret"])
+hmac_verifier = create_hmac_verifier(hmac_auth)
 
 # Verify Firebase service account exists
 firebase_creds_path = Path("firebase-service-account.json")
@@ -94,14 +112,14 @@ logger.info(
     poll_interval=CONFIG["poll_interval"],
 )
 
-# Initialize scheduler jobs
+# Initialize scheduler jobs (only if both reddit and fcm are available)
 scheduler_jobs = (
     SchedulerJobs(
         state_manager=state_manager,
         fcm_service=fcm_service,
         reddit_client=reddit_client,
     )
-    if reddit_client
+    if reddit_client and fcm_service
     else None
 )
 
@@ -193,7 +211,15 @@ async def startup_event():
     else:
         logger.warning("Reddit client not initialized")
 
-    # Start scheduler for cleanup
+    # Start scheduler - always add nonce cleanup, add FCM jobs if available
+    scheduler.add_job(
+        clean_expired_nonces,
+        trigger=IntervalTrigger(minutes=1),
+        id="nonce_cleanup",
+        name="Clean expired HMAC nonces",
+        replace_existing=True,
+    )
+
     if scheduler_jobs:
         scheduler.add_job(
             scheduler_jobs.cleanup_and_poll,
@@ -202,8 +228,9 @@ async def startup_event():
             name="Cleanup expired posts",
             replace_existing=True,
         )
-        scheduler.start()
-        logger.info("APScheduler started")
+
+    scheduler.start()
+    logger.info("APScheduler started")
 
     logger.info(f"Server started on {CONFIG['host']}:{CONFIG['port']}")
 
@@ -246,7 +273,7 @@ async def detailed_health_check(request: Request):
         "uptime_seconds": int(uptime),
         "uptime_human": f"{int(uptime // 3600)}h {int((uptime % 3600) // 60)}m {int(uptime % 60)}s",
         "database": stats,
-        "reddit_stream_active": reddit_stream is not None,
+        "reddit_stream_active": reddit_client is not None,
         "fcm_initialized": fcm_service is not None,
     }
 
@@ -297,7 +324,7 @@ async def get_post(request: Request, post_id: str):
 async def mark_solved(
     request: Request,
     post_id: str,
-    _: bool = Depends(lambda: verify_hmac_signature(request, hmac_auth)),
+    _: bool = Depends(hmac_verifier),
 ):
     """
     Mark a post as solved. Requires HMAC-SHA256 signature with timestamp and nonce.

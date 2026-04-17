@@ -1,12 +1,12 @@
 import axios from 'axios';
-import {Alert, Linking, Platform} from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {getBackendUrl} from './apiService';
+import { getBackendUrl } from './apiService';
+import { useAppStore } from '../store/useAppStore';
 
-const UPDATE_KEY = '@update_available';
 const VERSION_KEY = '@app_version';
-const GITHUB_REPO = 'your-username/Reddif'; // Change to your actual repo
-const CURRENT_VERSION = '1.0.0'; // Update this when releasing new versions
+const GITHUB_REPO = 'ReddifLeadMonitor/Reddif'; // Update with actual owner/repo
+const CURRENT_VERSION = '1.0.0';
 
 interface Release {
   tag_name: string;
@@ -35,7 +35,7 @@ interface UpdateInfo {
 const compareVersions = (v1: string, v2: string): number => {
   const parts1 = v1.replace(/[^\d.]/g, '').split('.').map(Number);
   const parts2 = v2.replace(/[^\d.]/g, '').split('.').map(Number);
-  
+
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
     const p1 = parts1[i] || 0;
     const p2 = parts2[i] || 0;
@@ -108,49 +108,6 @@ export const checkForUpdates = async (): Promise<UpdateInfo | null> => {
 };
 
 /**
- * Check if update popup should be shown
- * Returns true if we should show the update dialog
- */
-export const shouldShowUpdatePopup = async (): Promise<boolean> => {
-  try {
-    const updateDismissed = await AsyncStorage.getItem(UPDATE_KEY);
-    const lastVersion = await AsyncStorage.getItem(VERSION_KEY);
-    
-    // If update was dismissed for current version, don't show again
-    // But if app was updated (version changed), show again
-    if (updateDismissed === 'true' && lastVersion === CURRENT_VERSION) {
-      return false;
-    }
-    return true;
-  } catch {
-    return true;
-  }
-};
-
-/**
- * Dismiss the update popup (user chooses to skip)
- */
-export const dismissUpdatePopup = async (): Promise<void> => {
-  try {
-    await AsyncStorage.setItem(UPDATE_KEY, 'true');
-    await AsyncStorage.setItem(VERSION_KEY, CURRENT_VERSION);
-  } catch (error) {
-    console.log('Failed to save update preference:', error);
-  }
-};
-
-/**
- * Reset update popup (show again on next app open)
- */
-export const resetUpdatePopup = async (): Promise<void> => {
-  try {
-    await AsyncStorage.setItem(UPDATE_KEY, 'false');
-  } catch (error) {
-    console.log('Failed to reset update popup:', error);
-  }
-};
-
-/**
  * Download and install the new APK
  */
 export const downloadAndInstallUpdate = async (
@@ -161,21 +118,21 @@ export const downloadAndInstallUpdate = async (
     // For Android, we can use Linking to open the download
     // In production, you'd want to use a proper download manager
     // or expo-updates for production apps
-    
+
     const supported = await Linking.canOpenURL(apkUrl);
-    
+
     if (supported) {
       await Linking.openURL(apkUrl);
       return true;
     }
-    
+
     Alert.alert(
       'Download Required',
       'Please download the new version from the GitHub releases page.',
-      [{text: 'OK'}]
+      [{ text: 'OK' }]
     );
     return false;
-    
+
   } catch (error) {
     console.error('Failed to open APK URL:', error);
     Alert.alert('Error', 'Failed to download update. Please try again.');
@@ -188,16 +145,14 @@ export const downloadAndInstallUpdate = async (
  */
 export const checkAndShowUpdateDialog = async (): Promise<void> => {
   const updateInfo = await checkForUpdates();
-  
+
   if (!updateInfo) {
+    useAppStore.getState().setHasUpdateAvailable(false);
     return;
   }
-  
-  const shouldShow = await shouldShowUpdatePopup();
-  
-  if (!shouldShow) {
-    return;
-  }
+
+  // Mark globally that an update is available (so the App header button shows up)
+  useAppStore.getState().setHasUpdateAvailable(true);
 
   Alert.alert(
     `Update Available: v${updateInfo.latestVersion}`,
@@ -206,7 +161,9 @@ export const checkAndShowUpdateDialog = async (): Promise<void> => {
       {
         text: 'Later',
         style: 'cancel',
-        onPress: () => dismissUpdatePopup(),
+        onPress: () => {
+          // Dialog hides for this session but will pop up next app open
+        },
       },
       {
         text: 'Update Now',
@@ -225,4 +182,4 @@ export const checkAndShowUpdateDialog = async (): Promise<void> => {
 };
 
 // Export current version for display
-export {CURRENT_VERSION};
+export { CURRENT_VERSION };

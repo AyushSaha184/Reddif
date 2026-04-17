@@ -5,7 +5,7 @@ import hashlib
 import logging
 import time
 import secrets
-from typing import Set
+from typing import Dict
 
 from fastapi import HTTPException, Request, status
 from slowapi import Limiter
@@ -13,8 +13,8 @@ from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
 
-# Store used nonces in memory (in production, use Redis)
-_used_nonces: Set[str] = set()
+# Store used nonces with expiry times (in production, use Redis)
+_used_nonces: Dict[str, float] = {}
 NONCE_EXPIRY_SECONDS = 300  # 5 minutes
 
 
@@ -40,11 +40,11 @@ def clean_expired_nonces():
     """Clean up expired nonces periodically."""
     current_time = time.time()
     global _used_nonces
-    _used_nonces = {
-        nonce
-        for nonce in _used_nonces
-        if getattr(nonce, "expiry", current_time + 1) > current_time
-    }
+    expired_keys = [k for k, v in _used_nonces.items() if v < current_time]
+    for k in expired_keys:
+        del _used_nonces[k]
+    if expired_keys:
+        logger.debug("expired_nonces_cleaned", count=len(expired_keys))
 
 
 async def verify_hmac_signature(request: Request, hmac_auth: HMACAuth) -> bool:
@@ -126,7 +126,7 @@ async def verify_hmac_signature(request: Request, hmac_auth: HMACAuth) -> bool:
                 detail="Nonce already used (replay attack detected)",
             )
         # Add nonce with expiry
-        _used_nonces.add(nonce)
+        _used_nonces[nonce] = time.time() + NONCE_EXPIRY_SECONDS
         logger.debug("nonce_added", nonce=nonce[:8] + "...")
     else:
         logger.warning("hmac_verification_failed", reason="missing_nonce")

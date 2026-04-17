@@ -1,6 +1,6 @@
-import {Post, Settings} from '../types';
-import {create} from 'zustand';
-import {persist, createJSONStorage} from 'zustand/middleware';
+import { Post, Settings } from '../types';
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface AppState {
@@ -10,22 +10,26 @@ interface AppState {
   removePost: (postId: string) => void;
   updatePostFlair: (postId: string, newFlair: string) => void;
   clearExpiredPosts: () => void;
-  
+
   // Bookmarks
   bookmarks: Post[];
   addBookmark: (post: Post) => void;
   removeBookmark: (postId: string) => void;
   isBookmarked: (postId: string) => boolean;
-  
+
   // Tracked posts (for status updates)
   trackedPosts: string[];
   toggleTrackedPost: (postId: string) => void;
   isTracked: (postId: string) => boolean;
-  
+
   // Settings
   settings: Settings;
   updateSettings: (settings: Partial<Settings>) => void;
-  
+
+  // App Updates
+  hasUpdateAvailable: boolean;
+  setHasUpdateAvailable: (hasUpdate: boolean) => void;
+
   // Unread count
   unreadCount: number;
   incrementUnread: () => void;
@@ -53,6 +57,7 @@ export const useAppStore = create<AppState>()(
         },
       },
       unreadCount: 0,
+      hasUpdateAvailable: false,
 
       addPost: (post) => {
         set((state) => {
@@ -75,10 +80,10 @@ export const useAppStore = create<AppState>()(
       updatePostFlair: (postId, newFlair) => {
         set((state) => ({
           posts: state.posts.map((p) =>
-            p.id === postId ? {...p, flair: newFlair} : p
+            p.id === postId ? { ...p, flair: newFlair } : p
           ),
           bookmarks: state.bookmarks.map((p) =>
-            p.id === postId ? {...p, flair: newFlair} : p
+            p.id === postId ? { ...p, flair: newFlair } : p
           ),
         }));
       },
@@ -97,7 +102,7 @@ export const useAppStore = create<AppState>()(
           if (state.bookmarks.find((p) => p.id === post.id)) {
             return state;
           }
-          return {bookmarks: [post, ...state.bookmarks]};
+          return { bookmarks: [post, ...state.bookmarks] };
         });
       },
 
@@ -119,7 +124,7 @@ export const useAppStore = create<AppState>()(
               trackedPosts: state.trackedPosts.filter((id) => id !== postId),
             };
           }
-          return {trackedPosts: [...state.trackedPosts, postId]};
+          return { trackedPosts: [...state.trackedPosts, postId] };
         });
       },
 
@@ -129,16 +134,20 @@ export const useAppStore = create<AppState>()(
 
       updateSettings: (newSettings) => {
         set((state) => ({
-          settings: {...state.settings, ...newSettings},
+          settings: { ...state.settings, ...newSettings },
         }));
       },
 
       incrementUnread: () => {
-        set((state) => ({unreadCount: state.unreadCount + 1}));
+        set((state) => ({ unreadCount: state.unreadCount + 1 }));
       },
 
       clearUnread: () => {
-        set({unreadCount: 0});
+        set({ unreadCount: 0 });
+      },
+
+      setHasUpdateAvailable: (hasUpdate) => {
+        set({ hasUpdateAvailable: hasUpdate });
       },
     }),
     {
