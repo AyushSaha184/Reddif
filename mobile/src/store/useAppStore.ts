@@ -47,9 +47,7 @@ export const useAppStore = create<AppState>()(
       settings: {
         theme: 'system',
         accentColor: '#FF6B35',
-        showBody: true,
         fontSize: 16,
-        hapticFeedback: true,
         notifToggles: {
           paidNoAI: true,
           paidAIOK: true,

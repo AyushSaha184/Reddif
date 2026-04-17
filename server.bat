@@ -107,15 +107,11 @@ if errorlevel 1 exit /b 1
 call :install_deps
 if errorlevel 1 exit /b 1
 
-echo [INFO] Starting backend...
-echo [INFO] URL: http://localhost:8000/health
-echo [INFO] Press Ctrl+C to stop.
+echo [INFO] Starting backend in new terminal...
+echo [INFO] Backend will be at: http://localhost:8000/health
 
-pushd "%BACKEND_DIR%"
-"%VENV_PY%" main.py
-set "EXIT_CODE=%ERRORLEVEL%"
-popd
-exit /b %EXIT_CODE%
+start cmd /k "pushd "%BACKEND_DIR%" && "%VENV_PY%" main.py"
+exit /b 0
 
 :help
 echo.

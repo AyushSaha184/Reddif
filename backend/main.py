@@ -12,6 +12,7 @@ import structlog
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -172,36 +173,12 @@ def handle_new_submission(
         logger.error(f"Failed to send FCM notification for {parsed.post_id}")
 
 
-# FastAPI app
-app = FastAPI(
-    title="Reddit Lead Monitor",
-    description="Reddit post monitoring with FCM notifications",
-    version="1.0.0",
-)
-
-# Rate limiter
-limiter = create_limiter()
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-# CORS middleware - FIXED: Restrict origins in production
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS
-    if ALLOWED_ORIGINS
-    else ["http://localhost:3000", "http://localhost:8080"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "X-Signature", "Content-Type"],
-)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Start background jobs on startup."""
+# FastAPI app with lifespan
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup and shutdown."""
     logger.info("Starting up Reddit Lead Monitor")
 
-    # Start Reddit client in background
     if reddit_client:
         import threading
 
@@ -211,7 +188,6 @@ async def startup_event():
     else:
         logger.warning("Reddit client not initialized")
 
-    # Start scheduler - always add nonce cleanup, add FCM jobs if available
     scheduler.add_job(
         clean_expired_nonces,
         trigger=IntervalTrigger(minutes=1),
@@ -234,10 +210,8 @@ async def startup_event():
 
     logger.info(f"Server started on {CONFIG['host']}:{CONFIG['port']}")
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
     logger.info("Shutting down Reddit Lead Monitor")
 
     if reddit_client:
@@ -245,6 +219,30 @@ async def shutdown_event():
 
     scheduler.shutdown(wait=False)
     logger.info("Shutdown complete")
+
+
+app = FastAPI(
+    title="Reddit Lead Monitor",
+    description="Reddit post monitoring with FCM notifications",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Rate limiter
+limiter = create_limiter()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS middleware - FIXED: Restrict origins in production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS
+    if ALLOWED_ORIGINS
+    else ["http://localhost:3000", "http://localhost:8080"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "X-Signature", "Content-Type"],
+)
 
 
 @app.get("/health")

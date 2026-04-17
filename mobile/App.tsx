@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, Platform, UIManager } from 'react-native';
+import { Platform, UIManager, View } from 'react-native';
 import { NavigationContainer, LinkingOptions } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -35,75 +35,72 @@ const linking: LinkingOptions<any> = {
 
 function TabNavigator() {
   const { settings } = useAppStore();
-  const hasUpdate = useAppStore(state => state.hasUpdateAvailable);
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerTitle: 'Reddif',
-        headerTitleAlign: 'left',
-        headerTitleStyle: {
-          fontSize: 24,
-          fontWeight: 'bold',
-          letterSpacing: -0.5,
-        },
-        headerRight: () => {
-          if (!hasUpdate) return null;
-          return (
-            <TouchableOpacity
-              onPress={checkAndShowUpdateDialog}
-              style={{
-                marginRight: 16,
-                backgroundColor: settings.accentColor + '26',
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 16,
-                flexDirection: 'row',
-                alignItems: 'center',
-              }}
-            >
-              <Icon name="update" size={18} color={settings.accentColor} style={{ marginRight: 4 }} />
-              <Text style={{ color: settings.accentColor, fontWeight: 'bold' }}>Update App</Text>
-            </TouchableOpacity>
-          );
-        },
+        headerShown: false,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: string = 'help';
 
           if (route.name === 'Feed') {
-            iconName = focused ? 'home' : 'home-outline';
+            iconName = focused ? 'chat' : 'chat-outline';
           } else if (route.name === 'Bookmarks') {
-            iconName = focused ? 'bookmark' : 'bookmark-outline';
+            iconName = focused ? 'bookmark-multiple' : 'bookmark-multiple-outline';
           } else if (route.name === 'Settings') {
             iconName = focused ? 'cog' : 'cog-outline';
           }
 
           return (
             <View style={[
-              { paddingVertical: 4, paddingHorizontal: 16, borderRadius: 16 },
-              focused && { backgroundColor: settings.accentColor + '26' }
+              {
+                width: 38,
+                height: 38,
+                borderRadius: 19,
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+              focused && { backgroundColor: settings.accentColor }
             ]}>
               <Icon name={iconName} size={size} color={color} />
             </View>
           );
         },
-        tabBarActiveTintColor: settings.accentColor,
-        tabBarInactiveTintColor: '#888888',
-        tabBarStyle: {
-          backgroundColor: settings.theme === 'amoled' ? '#000000' : '#121212',
-          borderTopColor: '#2A2A2A',
-          elevation: 0,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '700',
+          marginBottom: 6,
         },
-        headerStyle: {
-          backgroundColor: settings.theme === 'amoled' ? '#000000' : '#121212',
+        tabBarActiveTintColor: '#091117',
+        tabBarInactiveTintColor: '#98A1AB',
+        tabBarStyle: {
+          position: 'absolute',
+          left: 16,
+          right: 16,
+          bottom: 16,
+          height: 76,
+          borderRadius: 28,
+          backgroundColor: settings.theme === 'amoled' ? '#111214' : '#17191D',
+          borderTopWidth: 0,
           elevation: 0,
           shadowOpacity: 0,
+          paddingTop: 10,
         },
-        headerTintColor: '#FFFFFF',
+        tabBarItemStyle: {
+          paddingVertical: 4,
+        },
       })}
     >
-      <Tab.Screen name="Feed" component={FeedScreen} />
-      <Tab.Screen name="Bookmarks" component={BookmarksScreen} />
+      <Tab.Screen
+        name="Feed"
+        component={FeedScreen}
+        options={{ tabBarLabel: 'Chats' }}
+      />
+      <Tab.Screen
+        name="Bookmarks"
+        component={BookmarksScreen}
+        options={{ tabBarLabel: 'Saved' }}
+      />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );

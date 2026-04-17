@@ -71,6 +71,8 @@ android {
         versionName "1.0.0"
     }
 
+    
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -78,15 +80,6 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        // Uncomment and configure for release signing:
-        // release {
-        //     if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
-        //         storeFile file(MYAPP_UPLOAD_STORE_FILE)
-        //         storePassword MYAPP_UPLOAD_STORE_PASSWORD
-        //         keyAlias MYAPP_UPLOAD_KEY_ALIAS
-        //         keyPassword MYAPP_UPLOAD_KEY_PASSWORD
-        //     }
-        // }
     }
 
     buildTypes {
@@ -94,8 +87,6 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
@@ -128,23 +119,32 @@ def getNpmVersion() {
 }
 
 afterEvaluate {
-    tasks.named('assembleRelease') {
-        doLast {
-            def version = getNpmVersion()
-            def targetDir = new File("C:/Apk-release")
-            if (!targetDir.exists()) {
-                targetDir.mkdirs()
-            }
-            
-            def sourceApk = file("${buildDir}/outputs/apk/release/app-release.apk")
-            def targetApk = new File(targetDir, "Reddif_v${version}.apk")
-            
-            if (sourceApk.exists()) {
-                println("Copying APK to ${targetApk.absolutePath}")
-                ant.copy(file: sourceApk, tofile: targetApk)
-            } else {
-                println("Source APK not found at ${sourceApk.absolutePath}")
+    android.applicationVariants.all { variant ->
+        def version = getNpmVersion()
+        
+        def copyTask = task("copy${variant.name.capitalize()}Apk") {
+            doLast {
+                def outputDir = new File("C:/Apk-release")
+                if (!outputDir.exists()) {
+                    outputDir.mkdirs()
+                }
+                
+                def apkName = variant.buildType.name == "debug" ? 
+                    "Reddif_v${version}_debug.apk" : 
+                    "Reddif_v${version}.apk"
+                
+                def sourceApk = variant.outputs[0].outputFile
+                def targetApk = new File(outputDir, apkName)
+                
+                if (sourceApk.exists()) {
+                    println("Copying ${variant.name} APK to ${targetApk.absolutePath}")
+                    ant.copy(file: sourceApk, tofile: targetApk)
+                }
             }
         }
+        
+        variant.assemble.finalizedBy(copyTask)
     }
 }
+
+

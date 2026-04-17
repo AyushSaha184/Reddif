@@ -1,158 +1,145 @@
 import React from 'react';
 import {
-  View,
+  Alert,
   FlatList,
+  Linking,
+  SafeAreaView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
-  Alert,
+  View,
 } from 'react-native';
-import {Swipeable} from 'react-native-gesture-handler';
-import {useAppStore} from '../store/useAppStore';
-import {Post} from '../types';
-import {ImageCarousel} from '../components/ImageCarousel';
-import {FlairChip} from '../components/FlairChip';
-import {BudgetBadge} from '../components/BudgetBadge';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
+import { PostListItem } from '../components/PostListItem';
+import { useAppStore } from '../store/useAppStore';
+import { Post } from '../types';
+
+const getThemeBackground = (theme: 'system' | 'dark' | 'amoled') =>
+  theme === 'amoled' ? '#000000' : '#0A0A0A';
+
 export function BookmarksScreen() {
-  const {bookmarks, removeBookmark, settings} = useAppStore();
+  const { bookmarks, removeBookmark, settings } = useAppStore();
+  const backgroundColor = getThemeBackground(settings.theme);
 
-  const handleDelete = (post: Post) => {
-    Alert.alert(
-      'Remove Bookmark',
-      'Are you sure you want to remove this bookmark?',
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => removeBookmark(post.id),
-        },
-      ]
-    );
+  const openPost = async (post: Post) => {
+    const redditUrl = `reddit://comments/${post.id}`;
+    const supported = await Linking.canOpenURL(redditUrl);
+    await Linking.openURL(supported ? redditUrl : post.permalink);
   };
 
-  const getThemeBackground = () => {
-    switch (settings.theme) {
-      case 'dark':
-        return '#121212';
-      case 'amoled':
-        return '#000000';
-      default:
-        return '#121212';
-    }
+  const handleRemove = (post: Post) => {
+    Alert.alert('Remove bookmark', 'Delete this saved lead from your list?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => removeBookmark(post.id),
+      },
+    ]);
   };
-
-  const renderItem = ({item}: {item: Post}) => {
-    return (
-      <Swipeable
-        renderRightActions={() => (
-          <TouchableOpacity
-            style={styles.deleteAction}
-            onPress={() => handleDelete(item)}
-          >
-            <Icon name="delete" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
-        )}
-      >
-        <View style={[styles.card, {backgroundColor: getThemeBackground()}]}>
-          {item.imageUrls.length > 0 && (
-            <View style={styles.imageContainer}>
-              <ImageCarousel images={item.imageUrls} height={200} />
-            </View>
-          )}
-          
-          <View style={styles.content}>
-            <View style={styles.header}>
-              <FlairChip flair={item.flair} />
-              {item.detectedBudget && (
-                <BudgetBadge budget={item.detectedBudget} />
-              )}
-            </View>
-            
-            <Text style={styles.title} numberOfLines={2}>
-              {item.title}
-            </Text>
-          </View>
-        </View>
-      </Swipeable>
-    );
-  };
-
-  if (bookmarks.length === 0) {
-    return (
-      <View style={[styles.container, {backgroundColor: getThemeBackground()}]}>
-        <Text style={styles.emptyText}>No bookmarks yet</Text>
-        <Text style={styles.emptySubtext}>
-          Bookmark posts to save them for later
-        </Text>
-      </View>
-    );
-  }
 
   return (
-    <View style={[styles.container, {backgroundColor: getThemeBackground()}]}>
-      <FlatList
-        data={bookmarks}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
+    <SafeAreaView style={[styles.container, { backgroundColor }]}>
+      <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
+
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Saved</Text>
+          <Text style={styles.subtitle}>Pinned leads for quick follow-up</Text>
+        </View>
+        <TouchableOpacity style={styles.headerIcon}>
+          <Icon name="bookmark-multiple" size={20} color={settings.accentColor} />
+        </TouchableOpacity>
+      </View>
+
+      {bookmarks.length > 0 ? (
+        <FlatList
+          data={bookmarks}
+          keyExtractor={item => item.id}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          renderItem={({ item }) => (
+            <PostListItem
+              post={item}
+              accentColor={settings.accentColor}
+              onPress={() => openPost(item)}
+              onSecondaryPress={() => handleRemove(item)}
+              secondaryIcon="trash-can-outline"
+              secondaryTint="#FF6B6B"
+              trailingValue="Saved"
+              trailingTone="muted"
+            />
+          )}
+        />
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyTitle}>No saved chats</Text>
+          <Text style={styles.emptySubtitle}>
+            Bookmark leads from the main feed and they will show up here.
+          </Text>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  list: {
-    padding: 16,
-  },
-  card: {
-    marginBottom: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-    elevation: 4,
-  },
-  imageContainer: {
-    width: '100%',
-  },
-  content: {
-    padding: 16,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-    gap: 8,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 14,
   },
   title: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    color: '#F5F7FB',
+    fontSize: 30,
+    fontWeight: '800',
+    letterSpacing: -1,
   },
-  deleteAction: {
-    backgroundColor: '#FF4444',
-    justifyContent: 'center',
+  subtitle: {
+    marginTop: 4,
+    color: '#77818D',
+    fontSize: 13,
+  },
+  headerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
-    width: 80,
-    borderRadius: 12,
+    justifyContent: 'center',
+    backgroundColor: '#15181C',
   },
-  emptyText: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 8,
+  listContent: {
+    paddingBottom: 110,
   },
-  emptySubtext: {
-    color: '#888888',
+  separator: {
+    height: 1,
+    marginLeft: 88,
+    backgroundColor: '#14181D',
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    color: '#F4F7FB',
+    fontSize: 21,
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    marginTop: 10,
+    color: '#7B8591',
     fontSize: 14,
     textAlign: 'center',
-    paddingHorizontal: 32,
+    lineHeight: 20,
   },
 });

@@ -13,9 +13,7 @@ export interface Post {
 export interface Settings {
   theme: 'system' | 'dark' | 'amoled';
   accentColor: string;
-  showBody: boolean;
   fontSize: number;
-  hapticFeedback: boolean;
   notifToggles: {
     paidNoAI: boolean;
     paidAIOK: boolean;
