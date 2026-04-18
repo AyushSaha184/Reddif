@@ -17,7 +17,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { getBackendUrl, setBackendUrl } from '../services/apiService';
 import { fcmService } from '../services/fcmService';
-import { setHmacSecret } from '../services/hmacService';
+import { hasHmacSecretConfigured, setHmacSecret } from '../services/hmacService';
 import { useAppStore } from '../store/useAppStore';
 import { Settings } from '../types';
 
@@ -44,7 +44,7 @@ export function SettingsScreen() {
   const [urlInput, setUrlInput] = useState('');
   const [showSecretModal, setShowSecretModal] = useState(false);
   const [secretInput, setSecretInput] = useState('');
-  const [draftHmacSecret, setDraftHmacSecret] = useState('');
+  const [hmacConfigured, setHmacConfigured] = useState(false);
 
   useEffect(() => {
     const loadUrl = async () => {
@@ -52,20 +52,31 @@ export function SettingsScreen() {
       setBackendUrlState(url);
       setDraftBackendUrl(url);
     };
+
+    const loadHmacStatus = async () => {
+      const isConfigured = await hasHmacSecretConfigured();
+      setHmacConfigured(isConfigured);
+    };
+
     loadUrl();
+    loadHmacStatus();
   }, []);
 
   useFocusEffect(
     useCallback(() => {
+      const refreshHmacStatus = async () => {
+        const isConfigured = await hasHmacSecretConfigured();
+        setHmacConfigured(isConfigured);
+      };
+
+      refreshHmacStatus();
       setDraftSettings(settings);
       setDraftBackendUrl(backendUrl || '');
-      setDraftHmacSecret('');
       setShowUrlModal(false);
       setShowSecretModal(false);
       return () => {
         setDraftSettings(settings);
         setDraftBackendUrl(backendUrl || '');
-        setDraftHmacSecret('');
         setShowUrlModal(false);
         setShowSecretModal(false);
       };
@@ -121,15 +132,21 @@ export function SettingsScreen() {
     }
   };
 
-  const handleSaveHmacSecretDraft = () => {
+  const handleSaveHmacSecretDraft = async () => {
     const trimmedSecret = secretInput.trim();
     if (!trimmedSecret) {
       Alert.alert('Error', 'Please enter a secret');
       return;
     }
-    setDraftHmacSecret(trimmedSecret);
-    setSecretInput('');
-    setShowSecretModal(false);
+    try {
+      await setHmacSecret(trimmedSecret);
+      setHmacConfigured(true);
+      setSecretInput('');
+      setShowSecretModal(false);
+      Alert.alert('Saved', 'HMAC secret saved successfully.');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save HMAC secret');
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -139,11 +156,6 @@ export function SettingsScreen() {
       if (draftBackendUrl.trim() && draftBackendUrl !== backendUrl) {
         await setBackendUrl(draftBackendUrl.trim());
         setBackendUrlState(draftBackendUrl.trim());
-      }
-
-      if (draftHmacSecret) {
-        await setHmacSecret(draftHmacSecret);
-        setDraftHmacSecret('');
       }
 
       await fcmService.subscribeToTopics();
@@ -248,7 +260,7 @@ export function SettingsScreen() {
           <Divider />
           <ActionRow
             label="HMAC Secret"
-            sublabel={draftHmacSecret ? 'Pending change' : 'Required for authenticated requests'}
+            sublabel={hmacConfigured ? 'Configured' : 'Required for authenticated requests'}
             accentColor={draftSettings.accentColor}
             icon="key"
             onPress={() => setShowSecretModal(true)}

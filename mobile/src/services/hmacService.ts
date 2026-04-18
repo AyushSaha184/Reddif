@@ -34,3 +34,8 @@ export async function setHmacSecret(secret: string): Promise<void> {
   await AsyncStorage.setItem(HMAC_SECRET_KEY, secret);
   cachedSecret = secret;
 }
+
+export async function hasHmacSecretConfigured(): Promise<boolean> {
+  const stored = await AsyncStorage.getItem(HMAC_SECRET_KEY);
+  return Boolean(stored && stored.trim().length > 0);
+}

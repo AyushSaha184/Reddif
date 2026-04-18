@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     backgroundColor: '#242424',
-    borderRadius: 22,
+    borderRadius: 999,
     padding: 4,
     flexDirection: 'row',
     overflow: 'hidden',
@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 18,
+    borderRadius: 999,
     backgroundColor: 'transparent',
   },
   chipText: {
