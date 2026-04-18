@@ -132,8 +132,8 @@ C:\Apk-release
 
 Expected files:
 
-- `Reddif_v1.0.0_debug.apk`
-- `Reddif_v1.0.0.apk`
+- `Reddif_version_debug.apk`
+- `Reddif_version.apk`
 
 Install the APK on your Android phone (Android 13+ supported).
 
