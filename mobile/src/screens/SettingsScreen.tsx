@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -19,6 +19,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { getBackendUrl, setBackendUrl } from '../services/apiService';
 import { fcmService } from '../services/fcmService';
 import { hasHmacSecretConfigured, setHmacSecret } from '../services/hmacService';
+import { isInstalledAppsAccessAllowed } from '../services/permissionPrefs';
 import { useAppStore } from '../store/useAppStore';
 import { Settings } from '../types';
 
@@ -46,6 +47,28 @@ export function SettingsScreen() {
   const [showSecretModal, setShowSecretModal] = useState(false);
   const [secretInput, setSecretInput] = useState('');
   const [hmacConfigured, setHmacConfigured] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success');
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showFeedback = (message: string, type: 'success' | 'error' = 'success') => {
+    if (feedbackTimerRef.current) {
+      clearTimeout(feedbackTimerRef.current);
+    }
+    setFeedbackMessage(message);
+    setFeedbackType(type);
+    feedbackTimerRef.current = setTimeout(() => {
+      setFeedbackMessage('');
+    }, 2500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current) {
+        clearTimeout(feedbackTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const loadUrl = async () => {
@@ -144,7 +167,7 @@ export function SettingsScreen() {
       setHmacConfigured(true);
       setSecretInput('');
       setShowSecretModal(false);
-      Alert.alert('Saved', 'HMAC secret saved successfully.');
+      showFeedback('HMAC secret saved successfully.', 'success');
     } catch (error) {
       Alert.alert('Error', 'Failed to save HMAC secret');
     }
@@ -160,7 +183,7 @@ export function SettingsScreen() {
       }
 
       await fcmService.subscribeToTopics();
-      Alert.alert('Saved', 'Settings have been saved successfully.');
+      showFeedback('Settings have been saved successfully.', 'success');
     } catch (error) {
       Alert.alert('Error', 'Failed to save settings');
     }
@@ -285,19 +308,25 @@ export function SettingsScreen() {
             const appStoreUrl = 'https://apps.apple.com/app/reddit/id1064216828';
             const playStoreUrl = 'market://details?id=com.reddit.frontpage';
             const playStoreWebUrl = 'https://play.google.com/store/apps/details?id=com.reddit.frontpage';
+            const canOpenInstalledApps = await isInstalledAppsAccessAllowed();
+
+            if (canOpenInstalledApps) {
+              try {
+                await Linking.openURL(redditUrl);
+                return;
+              } catch (error) {
+                // Fall through to store links below.
+              }
+            }
 
             try {
-              await Linking.openURL(redditUrl);
-            } catch (error) {
-              try {
-                if (Platform.OS === 'android') {
-                  await Linking.openURL(playStoreUrl);
-                } else {
-                  await Linking.openURL(appStoreUrl);
-                }
-              } catch (storeError) {
-                await Linking.openURL(Platform.OS === 'android' ? playStoreWebUrl : appStoreUrl);
+              if (Platform.OS === 'android') {
+                await Linking.openURL(playStoreUrl);
+              } else {
+                await Linking.openURL(appStoreUrl);
               }
+            } catch (storeError) {
+              await Linking.openURL(Platform.OS === 'android' ? playStoreWebUrl : appStoreUrl);
             }
           }}
         >
@@ -312,6 +341,24 @@ export function SettingsScreen() {
           <Text style={styles.saveSettingsText}>Save Settings</Text>
           <Icon name="content-save" size={16} color="#FFFFFF" />
         </TouchableOpacity>
+
+        {feedbackMessage ? (
+          <View
+            style={[
+              styles.feedbackCard,
+              feedbackType === 'success'
+                ? { borderColor: '#1F8A4D', backgroundColor: '#122A1D' }
+                : { borderColor: '#8A2D2D', backgroundColor: '#2A1616' },
+            ]}
+          >
+            <Icon
+              name={feedbackType === 'success' ? 'check-circle' : 'alert-circle'}
+              size={16}
+              color={feedbackType === 'success' ? '#44D37A' : '#FF7070'}
+            />
+            <Text style={styles.feedbackText}>{feedbackMessage}</Text>
+          </View>
+        ) : null}
 
         <View style={{ height: 20 }} />
 
@@ -577,6 +624,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+  },
+  feedbackCard: {
+    marginTop: 14,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  feedbackText: {
+    color: '#E8EEF6',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
   },
   systemButtonText: {
     color: '#FFFFFF',

@@ -3,6 +3,7 @@ import { Alert, Linking } from 'react-native';
 import { useAppStore } from '../store/useAppStore';
 
 const GITHUB_REPO = 'AyushSaha184/Reddif';
+const RELEASES_PAGE_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
 const CURRENT_VERSION: string = require('../../package.json').version;
 
 interface Release {
@@ -17,7 +18,7 @@ interface Release {
   }>;
 }
 
-interface UpdateInfo {
+export interface UpdateInfo {
   latestVersion: string;
   release: Release;
   apkUrl: string | null;
@@ -175,45 +176,20 @@ export const downloadAndInstallUpdate = async (
   }
 };
 
-/**
- * Main function to check and show update dialog
- */
-export const checkAndShowUpdateDialog = async (): Promise<void> => {
+export const refreshUpdateAvailability = async (): Promise<UpdateInfo | null> => {
   const updateInfo = await checkForUpdates();
 
   if (!updateInfo) {
     useAppStore.getState().setHasUpdateAvailable(false);
-    return;
+    return null;
   }
 
-  // Mark globally that an update is available (so the App header button shows up)
   useAppStore.getState().setHasUpdateAvailable(true);
+  return updateInfo;
+};
 
-  Alert.alert(
-    `Update Available: v${updateInfo.latestVersion}`,
-    `What's new:\n${updateInfo.releaseNotes}`,
-    [
-      {
-        text: 'Later',
-        style: 'cancel',
-        onPress: () => {
-          // Dialog hides for this session but will pop up next app open
-        },
-      },
-      {
-        text: 'Update Now',
-        style: updateInfo.isMandatory ? 'destructive' : 'default',
-        onPress: async () => {
-          if (updateInfo.apkUrl) {
-            await downloadAndInstallUpdate(updateInfo.apkUrl);
-          } else {
-            // Open GitHub release page if no direct APK
-            await Linking.openURL(updateInfo.release.html_url);
-          }
-        },
-      },
-    ]
-  );
+export const openReleasesPage = async (): Promise<void> => {
+  await Linking.openURL(RELEASES_PAGE_URL);
 };
 
 // Export current version for display
