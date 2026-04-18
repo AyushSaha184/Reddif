@@ -7,10 +7,8 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { PostListItem } from '../components/PostListItem';
 import { useAppStore } from '../store/useAppStore';
@@ -30,57 +28,51 @@ export function BookmarksScreen() {
   };
 
   const handleRemove = (post: Post) => {
-    Alert.alert('Remove bookmark', 'Delete this saved lead from your list?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => removeBookmark(post.id),
-      },
-    ]);
+    Alert.alert(
+      'Remove Bookmark',
+      'Are you sure you want to remove this bookmark?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => removeBookmark(post.id),
+        },
+      ],
+    );
   };
+
+  if (bookmarks.length === 0) {
+    return (
+      <View style={[styles.container, { backgroundColor }]}>
+        <Text style={styles.emptyText}>No bookmarks yet</Text>
+        <Text style={styles.emptySubtext}>
+          Bookmark posts to save them for later
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]}>
       <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
-
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Saved</Text>
-          <Text style={styles.subtitle}>Pinned leads for quick follow-up</Text>
-        </View>
-        <TouchableOpacity style={styles.headerIcon}>
-          <Icon name="bookmark-multiple" size={20} color={settings.accentColor} />
-        </TouchableOpacity>
-      </View>
-
-      {bookmarks.length > 0 ? (
-        <FlatList
-          data={bookmarks}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          renderItem={({ item }) => (
-            <PostListItem
-              post={item}
-              accentColor={settings.accentColor}
-              onPress={() => openPost(item)}
-              onSecondaryPress={() => handleRemove(item)}
-              secondaryIcon="trash-can-outline"
-              secondaryTint="#FF6B6B"
-              trailingValue="Saved"
-              trailingTone="muted"
-            />
-          )}
-        />
-      ) : (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No saved chats</Text>
-          <Text style={styles.emptySubtitle}>
-            Bookmark leads from the main feed and they will show up here.
-          </Text>
-        </View>
-      )}
+      <FlatList
+        data={bookmarks}
+        renderItem={({ item }) => (
+          <PostListItem
+            post={item}
+            accentColor={settings.accentColor}
+            onPress={() => openPost(item)}
+            onSecondaryPress={() => handleRemove(item)}
+            secondaryIcon="delete-outline"
+            secondaryTint="#FF6B6B"
+          />
+        )}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.list}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        showsVerticalScrollIndicator={false}
+      />
     </SafeAreaView>
   );
 }
@@ -88,35 +80,11 @@ export function BookmarksScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 14,
-  },
-  title: {
-    color: '#F5F7FB',
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: -1,
-  },
-  subtitle: {
-    marginTop: 4,
-    color: '#77818D',
-    fontSize: 13,
-  },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#15181C',
+    alignItems: 'center',
   },
-  listContent: {
+  list: {
+    width: '100%',
     paddingBottom: 110,
   },
   separator: {
@@ -124,22 +92,16 @@ const styles = StyleSheet.create({
     marginLeft: 88,
     backgroundColor: '#14181D',
   },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
+  emptyText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
-  emptyTitle: {
-    color: '#F4F7FB',
-    fontSize: 21,
-    fontWeight: '700',
-  },
-  emptySubtitle: {
-    marginTop: 10,
-    color: '#7B8591',
+  emptySubtext: {
+    color: '#888888',
     fontSize: 14,
     textAlign: 'center',
-    lineHeight: 20,
+    paddingHorizontal: 32,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -12,22 +12,24 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { getBackendUrl, setBackendUrl } from '../services/apiService';
 import { fcmService } from '../services/fcmService';
 import { setHmacSecret } from '../services/hmacService';
 import { useAppStore } from '../store/useAppStore';
+import { Settings } from '../types';
 
 const ACCENT_COLORS = [
-  '#2AABEE',
   '#FF6B35',
-  '#4FD1A5',
-  '#F9C74F',
-  '#A78BFA',
-  '#FF5D8F',
-  '#61DAFB',
-  '#9AA5B1',
+  '#FF3366',
+  '#9C27B0',
+  '#2196F3',
+  '#00BCD4',
+  '#4CAF50',
+  '#FFEB3B',
+  '#FF5722',
 ];
 
 const getThemeBackground = (theme: 'system' | 'dark' | 'amoled') =>
@@ -35,42 +37,72 @@ const getThemeBackground = (theme: 'system' | 'dark' | 'amoled') =>
 
 export function SettingsScreen() {
   const { settings, updateSettings } = useAppStore();
+  const [draftSettings, setDraftSettings] = useState<Settings>(settings);
   const [backendUrl, setBackendUrlState] = useState('');
+  const [draftBackendUrl, setDraftBackendUrl] = useState('');
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [showSecretModal, setShowSecretModal] = useState(false);
   const [secretInput, setSecretInput] = useState('');
+  const [draftHmacSecret, setDraftHmacSecret] = useState('');
 
   useEffect(() => {
     const loadUrl = async () => {
       const url = await getBackendUrl();
       setBackendUrlState(url);
+      setDraftBackendUrl(url);
     };
-
     loadUrl();
   }, []);
 
-  const backgroundColor = getThemeBackground(settings.theme);
+  useFocusEffect(
+    useCallback(() => {
+      setDraftSettings(settings);
+      setDraftBackendUrl(backendUrl || '');
+      setDraftHmacSecret('');
+      setShowUrlModal(false);
+      setShowSecretModal(false);
+      return () => {
+        setDraftSettings(settings);
+        setDraftBackendUrl(backendUrl || '');
+        setDraftHmacSecret('');
+        setShowUrlModal(false);
+        setShowSecretModal(false);
+      };
+    }, [settings, backendUrl]),
+  );
+
+  useEffect(() => {
+    setDraftSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    if (backendUrl) {
+      setDraftBackendUrl(backendUrl);
+    }
+  }, [backendUrl]);
+
+  const backgroundColor = getThemeBackground(draftSettings.theme);
 
   const handleThemeChange = (theme: 'system' | 'dark' | 'amoled') => {
-    updateSettings({ theme });
+    setDraftSettings(current => ({ ...current, theme }));
   };
 
   const handleAccentChange = (color: string) => {
-    updateSettings({ accentColor: color });
+    setDraftSettings(current => ({ ...current, accentColor: color }));
   };
 
-  const handleNotifToggle = async (key: keyof typeof settings.notifToggles) => {
-    updateSettings({
+  const handleNotifToggle = (key: keyof typeof draftSettings.notifToggles) => {
+    setDraftSettings(current => ({
+      ...current,
       notifToggles: {
-        ...settings.notifToggles,
-        [key]: !settings.notifToggles[key],
+        ...current.notifToggles,
+        [key]: !current.notifToggles[key],
       },
-    });
-    await fcmService.subscribeToTopics();
+    }));
   };
 
-  const handleSaveBackendUrl = async () => {
+  const handleSaveBackendUrlDraft = () => {
     try {
       const trimmedUrl = urlInput.trim();
       if (!trimmedUrl) {
@@ -78,99 +110,108 @@ export function SettingsScreen() {
         return;
       }
 
-      await setBackendUrl(trimmedUrl);
-      setBackendUrlState(trimmedUrl);
+      if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+        throw new Error('URL must start with http:// or https://');
+      }
+
+      setDraftBackendUrl(trimmedUrl);
       setShowUrlModal(false);
-      Alert.alert('Saved', 'Backend URL updated.');
     } catch (error) {
-      Alert.alert('Error', 'URL must start with http:// or https://');
+      Alert.alert('Error', 'Invalid URL format. Must start with http:// or https://');
     }
   };
 
-  const handleSaveHmacSecret = async () => {
+  const handleSaveHmacSecretDraft = () => {
+    const trimmedSecret = secretInput.trim();
+    if (!trimmedSecret) {
+      Alert.alert('Error', 'Please enter a secret');
+      return;
+    }
+    setDraftHmacSecret(trimmedSecret);
+    setSecretInput('');
+    setShowSecretModal(false);
+  };
+
+  const handleSaveSettings = async () => {
     try {
-      const trimmedSecret = secretInput.trim();
-      if (!trimmedSecret) {
-        Alert.alert('Error', 'Please enter a secret');
-        return;
+      updateSettings(draftSettings);
+
+      if (draftBackendUrl.trim() && draftBackendUrl !== backendUrl) {
+        await setBackendUrl(draftBackendUrl.trim());
+        setBackendUrlState(draftBackendUrl.trim());
       }
 
-      await setHmacSecret(trimmedSecret);
-      setShowSecretModal(false);
-      Alert.alert('Saved', 'HMAC secret stored.');
+      if (draftHmacSecret) {
+        await setHmacSecret(draftHmacSecret);
+        setDraftHmacSecret('');
+      }
+
+      await fcmService.subscribeToTopics();
+      Alert.alert('Saved', 'Settings have been saved successfully.');
     } catch (error) {
-      Alert.alert('Error', 'Failed to save HMAC secret');
+      Alert.alert('Error', 'Failed to save settings');
     }
   };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Settings</Text>
-            <Text style={styles.subtitle}>Telegram-like dark control panel</Text>
-          </View>
-          <View style={[styles.profileBubble, { borderColor: settings.accentColor }]}>
-            <Text style={styles.profileInitial}>R</Text>
-          </View>
-        </View>
-
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.sectionTitle}>Notifications</Text>
+
         <View style={styles.card}>
-          <SettingSwitchRow
+          <SwitchRow
             label="Paid - No AI"
-            description="Only manual leads"
-            value={settings.notifToggles.paidNoAI}
-            accentColor={settings.accentColor}
+            value={draftSettings.notifToggles.paidNoAI}
+            accentColor={draftSettings.accentColor}
             onToggle={() => handleNotifToggle('paidNoAI')}
           />
           <Divider />
-          <SettingSwitchRow
+          <SwitchRow
             label="Paid - AI OK"
-            description="Leads that allow AI workflows"
-            value={settings.notifToggles.paidAIOK}
-            accentColor={settings.accentColor}
+            value={draftSettings.notifToggles.paidAIOK}
+            accentColor={draftSettings.accentColor}
             onToggle={() => handleNotifToggle('paidAIOK')}
           />
           <Divider />
-          <SettingSwitchRow
+          <SwitchRow
             label="Free"
-            description="Low-priority free requests"
-            value={settings.notifToggles.free}
-            accentColor={settings.accentColor}
+            value={draftSettings.notifToggles.free}
+            accentColor={draftSettings.accentColor}
             onToggle={() => handleNotifToggle('free')}
           />
         </View>
 
         <Text style={styles.sectionTitle}>Theme</Text>
+
         <View style={styles.card}>
           <SelectRow
-            label="System"
-            description="Follow device appearance"
-            selected={settings.theme === 'system'}
-            accentColor={settings.accentColor}
+            label="System Default"
+            selected={draftSettings.theme === 'system'}
+            accentColor={draftSettings.accentColor}
             onPress={() => handleThemeChange('system')}
           />
           <Divider />
           <SelectRow
-            label="Dark"
-            description="Soft Telegram-like black"
-            selected={settings.theme === 'dark'}
-            accentColor={settings.accentColor}
+            label="Standard Dark (#121212)"
+            selected={draftSettings.theme === 'dark'}
+            accentColor={draftSettings.accentColor}
             onPress={() => handleThemeChange('dark')}
           />
           <Divider />
           <SelectRow
-            label="AMOLED"
-            description="Pure black background"
-            selected={settings.theme === 'amoled'}
-            accentColor={settings.accentColor}
+            label="Pure AMOLED (#000000)"
+            selected={draftSettings.theme === 'amoled'}
+            accentColor={draftSettings.accentColor}
             onPress={() => handleThemeChange('amoled')}
           />
         </View>
 
-        <Text style={styles.sectionTitle}>Accent</Text>
+        <Text style={styles.sectionTitle}>Accent Color</Text>
+
         <View style={styles.card}>
           <View style={styles.colorGrid}>
             {ACCENT_COLORS.map(color => (
@@ -179,216 +220,161 @@ export function SettingsScreen() {
                 style={[
                   styles.colorButton,
                   { backgroundColor: color },
-                  settings.accentColor === color && styles.selectedColor,
+                  draftSettings.accentColor === color && styles.selectedColor,
                 ]}
                 onPress={() => handleAccentChange(color)}
               >
-                {settings.accentColor === color ? (
-                  <Icon name="check" size={16} color="#071018" />
+                {draftSettings.accentColor === color ? (
+                  <Icon name="check" size={16} color="#FFFFFF" />
                 ) : null}
               </TouchableOpacity>
             ))}
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Connection</Text>
+        <Text style={styles.sectionTitle}>Backend Connection</Text>
+
         <View style={styles.card}>
           <ActionRow
             label="Server URL"
-            description={backendUrl || 'Not set'}
-            accentColor={settings.accentColor}
-            icon="pencil-outline"
+            sublabel={draftBackendUrl}
+            accentColor={draftSettings.accentColor}
+            icon="pencil"
             onPress={() => {
-              setUrlInput(backendUrl);
+              setUrlInput(draftBackendUrl);
               setShowUrlModal(true);
             }}
           />
           <Divider />
           <ActionRow
             label="HMAC Secret"
-            description="Required for authenticated backend requests"
-            accentColor={settings.accentColor}
-            icon="key-outline"
+            sublabel={draftHmacSecret ? 'Pending change' : 'Required for authenticated requests'}
+            accentColor={draftSettings.accentColor}
+            icon="key"
             onPress={() => setShowSecretModal(true)}
           />
         </View>
 
-        <Text style={styles.sectionTitle}>Actions</Text>
-        <View style={styles.card}>
-          <ActionRow
-            label="System notifications"
-            description="Open Android app notification settings"
-            accentColor={settings.accentColor}
-            icon="bell-cog-outline"
-            onPress={() => Linking.openSettings()}
-          />
-          <Divider />
-          <ActionRow
-            label="Open Reddit"
-            description="Jump to the native Reddit app if installed"
-            accentColor={settings.accentColor}
-            icon="reddit"
-            onPress={async () => {
-              const redditUrl = 'reddit://';
-              const playStoreUrl = 'market://details?id=com.reddit.frontpage';
-              try {
-                const supported = await Linking.canOpenURL(redditUrl);
-                await Linking.openURL(supported ? redditUrl : playStoreUrl);
-              } catch (error) {
-                await Linking.openURL(playStoreUrl);
-              }
-            }}
-          />
-        </View>
+        <TouchableOpacity
+          style={styles.systemButton}
+          onPress={() => Linking.openSettings()}
+        >
+          <Text style={styles.systemButtonText}>
+            Open System Notification Settings
+          </Text>
+          <Icon name="open-in-new" size={16} color={draftSettings.accentColor} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.systemButton}
+          onPress={async () => {
+            const redditUrl = 'reddit://';
+            const playStoreUrl = 'market://details?id=com.reddit.frontpage';
+            try {
+              const supported = await Linking.canOpenURL(redditUrl);
+              await Linking.openURL(supported ? redditUrl : playStoreUrl);
+            } catch (error) {
+              await Linking.openURL(playStoreUrl);
+            }
+          }}
+        >
+          <Text style={styles.systemButtonText}>Open Reddit</Text>
+          <Icon name="reddit" size={16} color={draftSettings.accentColor} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.saveSettingsButton, { backgroundColor: draftSettings.accentColor }]}
+          onPress={handleSaveSettings}
+        >
+          <Text style={styles.saveSettingsText}>Save Settings</Text>
+          <Icon name="content-save" size={16} color="#FFFFFF" />
+        </TouchableOpacity>
+
+        <View style={{ height: 20 }} />
+
+        <Modal
+          visible={showUrlModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowUrlModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Enter Backend URL</Text>
+              <Text style={styles.modalSubtitle}>
+                Enter the URL where your backend is running
+              </Text>
+              <TextInput
+                style={styles.urlInput}
+                value={urlInput}
+                onChangeText={setUrlInput}
+                placeholder="http://192.168.1.100:8000"
+                placeholderTextColor="#666666"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => setShowUrlModal(false)}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.saveButton, { backgroundColor: draftSettings.accentColor }]}
+                  onPress={handleSaveBackendUrlDraft}
+                >
+                  <Text style={styles.saveButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={showSecretModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowSecretModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Enter HMAC Secret</Text>
+              <Text style={styles.modalSubtitle}>
+                Must match the secret configured on your backend
+              </Text>
+              <TextInput
+                style={styles.urlInput}
+                value={secretInput}
+                onChangeText={setSecretInput}
+                placeholder="your-shared-secret"
+                placeholderTextColor="#666666"
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => {
+                    setSecretInput('');
+                    setShowSecretModal(false);
+                  }}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.saveButton, { backgroundColor: draftSettings.accentColor }]}
+                  onPress={handleSaveHmacSecretDraft}
+                >
+                  <Text style={styles.saveButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
-
-      <Modal
-        visible={showUrlModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowUrlModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Backend URL</Text>
-            <Text style={styles.modalSubtitle}>Enter the server address for Reddif.</Text>
-            <TextInput
-              style={styles.input}
-              value={urlInput}
-              onChangeText={setUrlInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="http://192.168.1.100:8000"
-              placeholderTextColor="#66707B"
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setShowUrlModal(false)}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: settings.accentColor }]}
-                onPress={handleSaveBackendUrl}
-              >
-                <Text style={styles.confirmText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showSecretModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowSecretModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>HMAC Secret</Text>
-            <Text style={styles.modalSubtitle}>Must match the backend secret.</Text>
-            <TextInput
-              style={styles.input}
-              value={secretInput}
-              onChangeText={setSecretInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="your-shared-secret"
-              placeholderTextColor="#66707B"
-              secureTextEntry
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setShowSecretModal(false)}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: settings.accentColor }]}
-                onPress={handleSaveHmacSecret}
-              >
-                <Text style={styles.confirmText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
-  );
-}
-
-function SettingSwitchRow({
-  label,
-  description,
-  value,
-  accentColor,
-  onToggle,
-}: {
-  label: string;
-  description: string;
-  value: boolean;
-  accentColor: string;
-  onToggle: () => void;
-}) {
-  return (
-    <View style={styles.row}>
-      <View style={styles.rowText}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowDescription}>{description}</Text>
-      </View>
-      <Switch value={value} onValueChange={onToggle} thumbColor={accentColor} />
-    </View>
-  );
-}
-
-function SelectRow({
-  label,
-  description,
-  selected,
-  accentColor,
-  onPress,
-}: {
-  label: string;
-  description: string;
-  selected: boolean;
-  accentColor: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.row} onPress={onPress}>
-      <View style={styles.rowText}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowDescription}>{description}</Text>
-      </View>
-      {selected ? <Icon name="check-circle" size={22} color={accentColor} /> : null}
-    </TouchableOpacity>
-  );
-}
-
-function ActionRow({
-  label,
-  description,
-  accentColor,
-  icon,
-  onPress,
-}: {
-  label: string;
-  description: string;
-  accentColor: string;
-  icon: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.row} onPress={onPress}>
-      <View style={styles.rowText}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowDescription}>{description}</Text>
-      </View>
-      <Icon name={icon} size={20} color={accentColor} />
-    </TouchableOpacity>
   );
 }
 
@@ -396,168 +382,245 @@ function Divider() {
   return <View style={styles.divider} />;
 }
 
+function SwitchRow({
+  label,
+  value,
+  accentColor,
+  onToggle,
+}: {
+  label: string;
+  value: boolean;
+  accentColor: string;
+  onToggle: () => void;
+}) {
+  return (
+    <View style={styles.row}>
+      <Text style={styles.label}>{label}</Text>
+      <Switch value={value} onValueChange={onToggle} thumbColor={accentColor} />
+    </View>
+  );
+}
+
+function SelectRow({
+  label,
+  selected,
+  accentColor,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  accentColor: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.themeRow,
+        selected && {
+          backgroundColor: accentColor + '26',
+          borderColor: accentColor,
+        },
+      ]}
+      onPress={onPress}
+    >
+      <Text style={[styles.label, selected && { color: accentColor, fontWeight: '700' }]}>
+        {label}
+      </Text>
+      {selected ? <Icon name="check" size={20} color={accentColor} /> : null}
+    </TouchableOpacity>
+  );
+}
+
+function ActionRow({
+  label,
+  sublabel,
+  accentColor,
+  icon,
+  onPress,
+}: {
+  label: string;
+  sublabel: string;
+  accentColor: string;
+  icon: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.themeRow} onPress={onPress}>
+      <View>
+        <Text style={styles.label}>{label}</Text>
+        <Text style={styles.sublabel} numberOfLines={1}>
+          {sublabel}
+        </Text>
+      </View>
+      <Icon name={icon} size={20} color={accentColor} />
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
   content: {
-    paddingHorizontal: 18,
-    paddingTop: 10,
+    padding: 16,
     paddingBottom: 120,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    paddingHorizontal: 2,
-  },
-  title: {
-    color: '#F4F7FB',
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: -1,
-  },
-  subtitle: {
-    marginTop: 4,
-    color: '#788390',
-    fontSize: 13,
-  },
-  profileBubble: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#16191D',
-    borderWidth: 1.5,
-  },
-  profileInitial: {
-    color: '#F4F7FB',
-    fontSize: 18,
-    fontWeight: '800',
-  },
   sectionTitle: {
-    marginTop: 20,
-    marginBottom: 10,
-    color: '#707A86',
-    fontSize: 12,
+    color: '#888888',
+    fontSize: 13,
+    fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 1,
-    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginTop: 24,
+    marginBottom: 8,
   },
   card: {
     backgroundColor: '#14171B',
-    borderRadius: 22,
+    borderRadius: 20,
+    padding: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#1B2026',
+    borderColor: '#1E2329',
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
+    padding: 12,
   },
-  rowText: {
-    flex: 1,
+  themeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  rowLabel: {
-    color: '#F5F7FB',
+  label: {
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '700',
   },
-  rowDescription: {
-    marginTop: 3,
-    color: '#7C8693',
+  sublabel: {
+    color: '#888888',
     fontSize: 13,
-    lineHeight: 18,
+    marginTop: 2,
+    maxWidth: 220,
   },
   divider: {
     height: 1,
-    marginLeft: 18,
     backgroundColor: '#1D2228',
+    marginLeft: 12,
   },
   colorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 14,
-    padding: 18,
+    padding: 8,
+    gap: 12,
   },
   colorButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   selectedColor: {
-    borderWidth: 2.5,
-    borderColor: '#F4F7FB',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  systemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+    padding: 16,
+    backgroundColor: '#14171B',
+    borderRadius: 16,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#1E2329',
+  },
+  saveSettingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+    padding: 16,
+    borderRadius: 16,
+    gap: 8,
+  },
+  saveSettingsText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  systemButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
-    padding: 24,
+    alignItems: 'center',
+    padding: 20,
   },
-  modalCard: {
-    width: '100%',
-    maxWidth: 420,
-    borderRadius: 24,
+  modalContent: {
     backgroundColor: '#14171B',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
     borderWidth: 1,
     borderColor: '#1E2329',
-    padding: 22,
   },
   modalTitle: {
-    color: '#F4F7FB',
+    color: '#FFFFFF',
     fontSize: 20,
-    fontWeight: '800',
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
   modalSubtitle: {
-    marginTop: 6,
-    marginBottom: 18,
-    color: '#7A8591',
+    color: '#888888',
     fontSize: 14,
-    lineHeight: 20,
+    marginBottom: 20,
   },
-  input: {
-    height: 52,
-    borderRadius: 16,
+  urlInput: {
     backgroundColor: '#0F1215',
+    borderRadius: 12,
+    padding: 16,
+    color: '#FFFFFF',
+    fontSize: 16,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#1B2025',
-    paddingHorizontal: 16,
-    color: '#F4F7FB',
-    fontSize: 15,
+    borderColor: '#1E2329',
   },
   modalButtons: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 18,
   },
   modalButton: {
     flex: 1,
-    height: 48,
-    borderRadius: 16,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   cancelButton: {
     backgroundColor: '#1B2026',
   },
-  cancelText: {
-    color: '#E8EDF3',
-    fontSize: 15,
-    fontWeight: '700',
+  saveButton: {
+    backgroundColor: '#FF6B35',
   },
-  confirmText: {
-    color: '#071018',
-    fontSize: 15,
-    fontWeight: '800',
+  cancelButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

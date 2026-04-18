@@ -51,15 +51,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   scrollContent: {
-    backgroundColor: '#1C1C1E',
-    borderRadius: 24,
+    backgroundColor: '#242424',
+    borderRadius: 22,
     padding: 4,
     flexDirection: 'row',
+    overflow: 'hidden',
   },
   chip: {
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 18,
     backgroundColor: 'transparent',
   },
   chipText: {

@@ -17,16 +17,7 @@ interface PostListItemProps {
   onSecondaryPress?: () => void;
   secondaryIcon?: string;
   secondaryTint?: string;
-  trailingValue?: string;
-  trailingTone?: 'accent' | 'muted';
 }
-
-const FLARE_LABELS: Record<string, string> = {
-  All: 'All leads',
-  'Paid - No AI': 'Manual work only',
-  'Paid - AI OK': 'AI workflow accepted',
-  Free: 'Free request',
-};
 
 const getRelativeTime = (createdAt: number) => {
   const deltaMs = Date.now() - createdAt;
@@ -46,9 +37,9 @@ const getRelativeTime = (createdAt: number) => {
 };
 
 const getSubtitle = (post: Post) => {
-  const flairLabel = FLARE_LABELS[post.flair] ?? post.flair;
-  const budget = post.detectedBudget ? ` • ${post.detectedBudget}` : '';
-  return `${flairLabel}${budget}`;
+  return post.detectedBudget
+    ? `${post.flair} - ${post.detectedBudget}`
+    : post.flair;
 };
 
 export function PostListItem({
@@ -58,12 +49,8 @@ export function PostListItem({
   onSecondaryPress,
   secondaryIcon = 'bookmark-outline',
   secondaryTint = '#7F8791',
-  trailingValue,
-  trailingTone = 'muted',
 }: PostListItemProps) {
   const previewImage = post.imageUrls[0];
-  const bubbleColor = trailingTone === 'accent' ? accentColor : '#2B313A';
-  const bubbleTextColor = trailingTone === 'accent' ? '#061018' : '#F4F7FB';
 
   return (
     <TouchableOpacity style={styles.row} activeOpacity={0.9} onPress={onPress}>
@@ -92,24 +79,15 @@ export function PostListItem({
             {getSubtitle(post)}
           </Text>
 
-          <View style={styles.trailingArea}>
-            {trailingValue ? (
-              <View style={[styles.trailingBubble, { backgroundColor: bubbleColor }]}>
-                <Text style={[styles.trailingText, { color: bubbleTextColor }]}>
-                  {trailingValue}
-                </Text>
-              </View>
-            ) : null}
-            {onSecondaryPress ? (
-              <TouchableOpacity
-                onPress={onSecondaryPress}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                style={styles.secondaryButton}
-              >
-                <Icon name={secondaryIcon} size={18} color={secondaryTint} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
+          {onSecondaryPress ? (
+            <TouchableOpacity
+              onPress={onSecondaryPress}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.secondaryButton}
+            >
+              <Icon name={secondaryIcon} size={18} color={secondaryTint} />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
     </TouchableOpacity>
@@ -176,23 +154,6 @@ const styles = StyleSheet.create({
     color: '#8490A1',
     fontSize: 14,
     lineHeight: 19,
-  },
-  trailingArea: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  trailingBubble: {
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-  trailingText: {
-    fontSize: 12,
-    fontWeight: '800',
   },
   secondaryButton: {
     width: 26,
