@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from typing import Any
 
 import structlog
@@ -14,6 +15,23 @@ FLAIR_TO_TOPIC = {
     "Paid - No AI": "paid_no_ai",
     "Paid - AI OK": "paid_ai_ok",
     "Free": "free_posts",
+}
+
+
+def normalize_flair(flair: str | None) -> str:
+    """Normalize flair text for resilient topic lookup."""
+    if not flair:
+        return ""
+
+    normalized = flair.strip().lower()
+    normalized = re.sub(r"\s*-\s*", "-", normalized)
+    normalized = re.sub(r"\s+", "-", normalized)
+    normalized = re.sub(r"-+", "-", normalized)
+    return normalized
+
+
+NORMALIZED_FLAIR_TO_TOPIC = {
+    normalize_flair(key): value for key, value in FLAIR_TO_TOPIC.items()
 }
 
 
@@ -46,7 +64,7 @@ class FCMService:
 
     def _get_topic(self, flair: str) -> str | None:
         """Get FCM topic for a flair."""
-        return FLAIR_TO_TOPIC.get(flair)
+        return NORMALIZED_FLAIR_TO_TOPIC.get(normalize_flair(flair))
 
     def send_new_post_notification(
         self,

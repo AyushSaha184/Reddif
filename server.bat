@@ -14,6 +14,7 @@ set "BACKEND_DIR=%ROOT_DIR%\backend"
 set "VENV_DIR=%BACKEND_DIR%\venv"
 set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
 set "REQUIREMENTS=%BACKEND_DIR%\requirements.txt"
+set "REQ_HASH_FILE=%VENV_DIR%\.requirements.sha256"
 
 if /I "%~1"=="help" goto :help
 if /I "%~1"=="--help" goto :help
@@ -71,10 +72,43 @@ exit /b 0
 call :ensure_venv
 if errorlevel 1 exit /b 1
 
-echo [INFO] Checking backend dependencies...
-"%VENV_PY%" -c "import fastapi" >nul 2>nul
-if %errorlevel%==0 (
-  echo [INFO] Dependencies already installed.
+call :get_requirements_hash
+set "HASH_AVAILABLE=1"
+if errorlevel 2 (
+  set "HASH_AVAILABLE=0"
+) else (
+  if errorlevel 1 exit /b 1
+)
+
+set "INSTALL_NEEDED=0"
+if "!HASH_AVAILABLE!"=="1" (
+  if not exist "%REQ_HASH_FILE%" (
+    echo [INFO] First-time dependency setup required.
+    set "INSTALL_NEEDED=1"
+  ) else (
+    set /p EXISTING_REQ_HASH=<"%REQ_HASH_FILE%"
+    if /I not "!EXISTING_REQ_HASH!"=="!CURRENT_REQ_HASH!" (
+      echo [INFO] requirements.txt changed. Reinstall required.
+      set "INSTALL_NEEDED=1"
+    )
+  )
+)
+
+if "!HASH_AVAILABLE!"=="0" (
+  echo [WARN] requirements hash unavailable, using import checks only.
+)
+
+if "!INSTALL_NEEDED!"=="0" (
+  echo [INFO] Verifying installed packages...
+  "%VENV_PY%" -c "import fastapi,uvicorn" >nul 2>nul
+  if errorlevel 1 (
+    echo [INFO] One or more required packages are missing. Reinstall required.
+    set "INSTALL_NEEDED=1"
+  )
+)
+
+if "!INSTALL_NEEDED!"=="0" (
+  echo [INFO] Dependencies are up to date.
   exit /b 0
 )
 
@@ -91,6 +125,33 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if "!HASH_AVAILABLE!"=="1" (
+  >"%REQ_HASH_FILE%" echo !CURRENT_REQ_HASH!
+  if errorlevel 1 (
+    echo [ERROR] Failed to write dependency marker file: "%REQ_HASH_FILE%"
+    exit /b 1
+  )
+  echo [INFO] Dependency marker updated.
+)
+
+exit /b 0
+
+:get_requirements_hash
+set "CURRENT_REQ_HASH="
+where certutil >nul 2>nul
+if errorlevel 1 (
+  exit /b 2
+)
+
+for /f "skip=1 tokens=1" %%H in ('certutil -hashfile "%REQUIREMENTS%" SHA256 ^| findstr /R /I "^[0-9A-F][0-9A-F]"') do (
+  set "CURRENT_REQ_HASH=%%H"
+  goto :hash_done
+)
+
+:hash_done
+if not defined CURRENT_REQ_HASH (
+  exit /b 2
+)
 exit /b 0
 
 :deps

@@ -26,6 +26,21 @@ class NotifeeService {
     });
   }
 
+  async showNewPostNotification(title: string, flair: string, budget?: string | null): Promise<void> {
+    const bodyBudget = budget ? ` • ${budget}` : '';
+    await notifee.displayNotification({
+      title: `[${flair}] New Post`,
+      body: `${title.slice(0, 80)}${bodyBudget}`,
+      android: {
+        channelId: 'reddit-leads',
+        importance: AndroidImportance.HIGH,
+        pressAction: {
+          id: 'default',
+        },
+      },
+    });
+  }
+
   async cancelNotification(notificationId: string): Promise<void> {
     await notifee.cancelNotification(notificationId);
   }

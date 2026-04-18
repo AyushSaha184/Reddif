@@ -3,6 +3,7 @@ import {
   Alert,
   Linking,
   Modal,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -281,12 +282,22 @@ export function SettingsScreen() {
           style={styles.systemButton}
           onPress={async () => {
             const redditUrl = 'reddit://';
+            const appStoreUrl = 'https://apps.apple.com/app/reddit/id1064216828';
             const playStoreUrl = 'market://details?id=com.reddit.frontpage';
+            const playStoreWebUrl = 'https://play.google.com/store/apps/details?id=com.reddit.frontpage';
+
             try {
-              const supported = await Linking.canOpenURL(redditUrl);
-              await Linking.openURL(supported ? redditUrl : playStoreUrl);
+              await Linking.openURL(redditUrl);
             } catch (error) {
-              await Linking.openURL(playStoreUrl);
+              try {
+                if (Platform.OS === 'android') {
+                  await Linking.openURL(playStoreUrl);
+                } else {
+                  await Linking.openURL(appStoreUrl);
+                }
+              } catch (storeError) {
+                await Linking.openURL(Platform.OS === 'android' ? playStoreWebUrl : appStoreUrl);
+              }
             }
           }}
         >

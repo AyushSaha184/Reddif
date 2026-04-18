@@ -23,8 +23,11 @@ export function BookmarksScreen() {
 
   const openPost = async (post: Post) => {
     const redditUrl = `reddit://comments/${post.id}`;
-    const supported = await Linking.canOpenURL(redditUrl);
-    await Linking.openURL(supported ? redditUrl : post.permalink);
+    try {
+      await Linking.openURL(redditUrl);
+    } catch (error) {
+      await Linking.openURL(post.permalink);
+    }
   };
 
   const handleRemove = (post: Post) => {

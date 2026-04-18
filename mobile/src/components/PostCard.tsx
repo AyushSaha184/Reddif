@@ -71,11 +71,9 @@ export function PostCard({ post, isActive }: PostCardProps) {
 
   const handleOpenInReddit = async () => {
     const redditUrl = `reddit://comments/${post.id}`;
-    const supported = await Linking.canOpenURL(redditUrl);
-
-    if (supported) {
+    try {
       await Linking.openURL(redditUrl);
-    } else {
+    } catch (error) {
       await Linking.openURL(post.permalink);
     }
   };

@@ -127,11 +127,13 @@ function App(): JSX.Element {
   const { settings, clearExpiredPosts } = useAppStore();
 
   useEffect(() => {
+    let unsubscribeForegroundMessages: (() => void) | undefined;
+
     // Initialize FCM
     const initFCM = async () => {
       await fcmService.requestPermission();
       await fcmService.subscribeToTopics();
-      fcmService.setupMessageHandlers();
+      unsubscribeForegroundMessages = fcmService.setupMessageHandlers();
       await notifeeService.createChannel();
     };
 
@@ -144,6 +146,9 @@ function App(): JSX.Element {
     checkAndShowUpdateDialog();
 
     return () => {
+      if (unsubscribeForegroundMessages) {
+        unsubscribeForegroundMessages();
+      }
       fcmService.unsubscribeFromAllTopics();
     };
   }, []);

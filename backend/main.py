@@ -64,13 +64,38 @@ structlog.configure(
 # Load environment variables
 load_dotenv()
 
+
+def resolve_subreddit(value: str | None) -> str:
+    """Resolve subreddit name from either plain name or full reddit URL."""
+    default_subreddit = "PhotoshopRequest"
+    if not value:
+        return default_subreddit
+
+    raw = value.strip()
+    if not raw:
+        return default_subreddit
+
+    # Support values like:
+    # - PhotoshopRequest
+    # - r/PhotoshopRequest
+    # - https://www.reddit.com/r/PhotoshopRequest/
+    match = re.search(r"(?:reddit\.com/)?r/([A-Za-z0-9_]+)", raw, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    # Fallback: sanitize plain subreddit-like token
+    cleaned = re.sub(r"[^A-Za-z0-9_]", "", raw)
+    return cleaned or default_subreddit
+
 # Configuration
 ALLOWED_ORIGINS = (
     os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
 )
 
 CONFIG = {
-    "subreddit_name": os.getenv("SUBREDDIT_NAME", "PhotoshopRequest"),
+    "subreddit_name": resolve_subreddit(
+        os.getenv("SUBREDDIT_NAME", "PhotoshopRequest")
+    ),
     "firebase_project_id": os.getenv("FIREBASE_PROJECT_ID"),
     "hmac_secret": os.getenv("HMAC_SECRET", "change-this-in-production"),
     "rate_limit": int(os.getenv("RATE_LIMIT", "60")),

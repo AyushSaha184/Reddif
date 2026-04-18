@@ -3,6 +3,8 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
 
+import groovy.json.JsonSlurper
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -67,8 +69,8 @@ android {
         applicationId "com.reddifleadmonitor"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode getNpmVersionCode()
+        versionName getNpmVersion()
     }
 
     
@@ -111,10 +113,24 @@ apply plugin: 'com.google.gms.google-services'
 def getNpmVersion() {
     def inputFile = new File(projectDir, '../../package.json')
     try {
-        def packageJson = new groovy.json.JsonSlurper().parseText(inputFile.text)
+        def packageJson = new JsonSlurper().parseText(inputFile.text)
         return packageJson.version
     } catch(Exception e) {
         return "1.0.0"
+    }
+}
+
+def getNpmVersionCode() {
+    def version = getNpmVersion()
+    try {
+        def parts = version.tokenize('.')
+        def major = parts.size() > 0 ? parts[0].toInteger() : 1
+        def minor = parts.size() > 1 ? parts[1].toInteger() : 0
+        def patch = parts.size() > 2 ? parts[2].toInteger() : 0
+
+        return (major * 10000) + (minor * 100) + patch
+    } catch(Exception e) {
+        return 1
     }
 }
 

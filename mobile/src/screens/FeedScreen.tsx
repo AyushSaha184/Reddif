@@ -49,8 +49,11 @@ export function FeedScreen() {
 
   const openPost = async (post: Post) => {
     const redditUrl = `reddit://comments/${post.id}`;
-    const supported = await Linking.canOpenURL(redditUrl);
-    await Linking.openURL(supported ? redditUrl : post.permalink);
+    try {
+      await Linking.openURL(redditUrl);
+    } catch (error) {
+      await Linking.openURL(post.permalink);
+    }
   };
 
   const backgroundColor = getThemeBackground(settings.theme);

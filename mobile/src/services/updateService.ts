@@ -1,12 +1,9 @@
 import axios from 'axios';
-import { Alert, Linking, Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getBackendUrl } from './apiService';
+import { Alert, Linking } from 'react-native';
 import { useAppStore } from '../store/useAppStore';
 
-const VERSION_KEY = '@app_version';
-const GITHUB_REPO = 'ReddifLeadMonitor/Reddif'; // Update with actual owner/repo
-const CURRENT_VERSION = '1.0.0';
+const GITHUB_REPO = 'AyushSaha184/Reddif';
+const CURRENT_VERSION: string = require('../../package.json').version;
 
 interface Release {
   tag_name: string;
@@ -27,6 +24,8 @@ interface UpdateInfo {
   releaseNotes: string;
   isMandatory: boolean;
 }
+
+const VERSION_REGEX = /v?(\d+(?:\.\d+){1,3})/i;
 
 /**
  * Compare semantic versions
@@ -50,9 +49,38 @@ const compareVersions = (v1: string, v2: string): number => {
  */
 const getApkAsset = (release: Release): string | null => {
   const apkAsset = release.assets?.find(
-    asset => asset.name.endsWith('.apk')
+    asset => asset.name.toLowerCase().endsWith('.apk')
   );
   return apkAsset?.browser_download_url || null;
+};
+
+const extractVersionFromText = (value: string | undefined): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(VERSION_REGEX);
+  return match ? match[1] : null;
+};
+
+const getLatestVersion = (release: Release): string | null => {
+  const fromTag = extractVersionFromText(release.tag_name);
+  if (fromTag) {
+    return fromTag;
+  }
+
+  const fromName = extractVersionFromText(release.name);
+  if (fromName) {
+    return fromName;
+  }
+
+  const apkAsset = release.assets?.find(asset => asset.name.toLowerCase().endsWith('.apk'));
+  const fromAsset = extractVersionFromText(apkAsset?.name);
+  if (fromAsset) {
+    return fromAsset;
+  }
+
+  return null;
 };
 
 /**
@@ -61,7 +89,7 @@ const getApkAsset = (release: Release): string | null => {
 export const checkForUpdates = async (): Promise<UpdateInfo | null> => {
   try {
     const response = await axios.get(
-      `https://api.github.com/repos/${GITHUB_REPO}/releases`,
+      `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
       {
         timeout: 10000,
         headers: {
@@ -71,12 +99,16 @@ export const checkForUpdates = async (): Promise<UpdateInfo | null> => {
       }
     );
 
-    if (!response.data || response.data.length === 0) {
+    if (!response.data) {
       return null;
     }
 
-    const latestRelease: Release = response.data[0];
-    const latestVersion = latestRelease.tag_name?.replace(/^v/, '') || '0.0.0';
+    const latestRelease: Release = response.data;
+    const latestVersion = getLatestVersion(latestRelease);
+    if (!latestVersion) {
+      return null;
+    }
+
     const currentVersion = CURRENT_VERSION;
 
     // Check if there's a newer version
@@ -89,7 +121,10 @@ export const checkForUpdates = async (): Promise<UpdateInfo | null> => {
     const apkUrl = getApkAsset(latestRelease);
 
     // Check if update is mandatory (e.g., major version changes)
-    const isMandatory = compareVersions(latestVersion.split('.')[0], currentVersion.split('.')[0]) > 0;
+    const isMandatory = compareVersions(
+      `${latestVersion.split('.')[0]}.0.0`,
+      `${currentVersion.split('.')[0]}.0.0`
+    ) > 0;
 
     // Parse release notes
     const releaseNotes = latestRelease.body || 'Bug fixes and improvements';
