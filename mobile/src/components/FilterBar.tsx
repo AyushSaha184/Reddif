@@ -10,65 +10,69 @@ interface FilterBarProps {
 
 export function FilterBar({ flairs, selectedFlair, onSelectFlair }: FilterBarProps) {
   const { settings } = useAppStore();
+  const shellColor = settings.theme === 'amoled' ? '#17191D' : '#232428';
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {flairs.map((flair) => (
-          <TouchableOpacity
-            key={flair}
-            style={[
-              styles.chip,
-              selectedFlair === flair && { backgroundColor: settings.accentColor },
-            ]}
-            onPress={() => {
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-              onSelectFlair(flair);
-            }}
-          >
-            <Text
+      <View style={[styles.shell, { backgroundColor: shellColor }]}> 
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {flairs.map((flair) => (
+            <TouchableOpacity
+              key={flair}
               style={[
-                styles.chipText,
-                selectedFlair === flair && styles.selectedChipText,
+                styles.chip,
+                selectedFlair === flair && { backgroundColor: settings.accentColor + '18' },
               ]}
+              onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                onSelectFlair(flair);
+              }}
             >
-              {flair}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+              <Text
+                style={[
+                  styles.chipText,
+                  selectedFlair === flair && { color: settings.accentColor },
+                ]}
+              >
+                {flair}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingHorizontal: 22,
   },
-  scrollContent: {
-    backgroundColor: '#242424',
-    borderRadius: 999,
-    padding: 4,
-    flexDirection: 'row',
+  shell: {
+    height: 58,
+    borderRadius: 18,
+    justifyContent: 'center',
     overflow: 'hidden',
   },
+  scrollContent: {
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
   chip: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 18,
     backgroundColor: 'transparent',
+    marginRight: 4,
   },
   chipText: {
-    color: '#AAAAAA',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  selectedChipText: {
-    color: '#FFFFFF',
+    color: '#98A1AB',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

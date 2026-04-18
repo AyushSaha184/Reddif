@@ -30,6 +30,7 @@ import {
 import {
   getNotificationPermissionChoice,
   hasShownInitialPermissionPrompt,
+  setInstalledAppsAccessForSession,
   setNotificationPermissionChoice,
   setInitialPermissionPromptShown,
   setInstalledAppsAccessAllowed,
@@ -146,33 +147,9 @@ function TabNavigator() {
           paddingVertical: 4,
         },
         headerStyle: {
-          backgroundColor: settings.theme === 'amoled' ? '#000000' : '#0A0A0A',
-          height: 88,
+          backgroundColor: settings.theme === 'amoled' ? '#000000' : '#121212',
           elevation: 0,
           shadowOpacity: 0,
-          borderBottomWidth: 0,
-        },
-        headerBackground: () => (
-          <View pointerEvents="none" style={styles.headerBackgroundWrap}>
-            <View
-              style={[
-                styles.headerSurface,
-                {
-                  backgroundColor: settings.theme === 'amoled' ? '#17191D' : '#232428',
-                },
-              ]}
-            />
-          </View>
-        ),
-        headerTitleContainerStyle: {
-          left: 40,
-          right: 40,
-        },
-        headerLeftContainerStyle: {
-          paddingLeft: 8,
-        },
-        headerRightContainerStyle: {
-          paddingRight: 8,
         },
         headerTintColor: '#FFFFFF',
         })}
@@ -229,35 +206,30 @@ function TabNavigator() {
 
 function App(): JSX.Element {
   const { settings, clearExpiredPosts } = useAppStore();
+  const [permissionPrompt, setPermissionPrompt] = React.useState<'notifications' | 'installedApps' | null>(null);
+  const permissionResolverRef = React.useRef<((value: string) => void) | null>(null);
+
+  const askPermissionChoice = React.useCallback(
+    (promptType: 'notifications' | 'installedApps'): Promise<string> => {
+      return new Promise((resolve) => {
+        permissionResolverRef.current = resolve;
+        setPermissionPrompt(promptType);
+      });
+    },
+    []
+  );
+
+  const resolvePermissionChoice = React.useCallback((choice: string) => {
+    setPermissionPrompt(null);
+    const resolver = permissionResolverRef.current;
+    permissionResolverRef.current = null;
+    if (resolver) {
+      resolver(choice);
+    }
+  }, []);
 
   useEffect(() => {
     let unsubscribeForegroundMessages: (() => void) | undefined;
-
-    const askInstalledAppsAccess = async (): Promise<void> => {
-      await new Promise<void>((resolve) => {
-        Alert.alert(
-          'Allow App Detection',
-          'Allow Reddif to detect installed apps so links can open directly in supported apps (like Reddit).',
-          [
-            {
-              text: 'Deny',
-              style: 'cancel',
-              onPress: async () => {
-                await setInstalledAppsAccessAllowed(false);
-                resolve();
-              },
-            },
-            {
-              text: 'Allow',
-              onPress: async () => {
-                await setInstalledAppsAccessAllowed(true);
-                resolve();
-              },
-            },
-          ]
-        );
-      });
-    };
 
     const runInitialPermissionPrompts = async (): Promise<void> => {
       const alreadyShown = await hasShownInitialPermissionPrompt();
@@ -269,31 +241,28 @@ function App(): JSX.Element {
         return;
       }
 
-      await new Promise<void>((resolve) => {
-        Alert.alert(
-          'Allow Notifications',
-          'Enable notifications so Reddif can alert you about new posts and flair updates.',
-          [
-            {
-              text: 'Not Now',
-              style: 'cancel',
-              onPress: async () => {
-                await setNotificationPermissionChoice('deferred');
-                resolve();
-              },
-            },
-            {
-              text: 'Allow',
-              onPress: async () => {
-                await setNotificationPermissionChoice('allowed');
-                await fcmService.requestPermission();
-                resolve();
-              },
-            },
-          ]
-        );
-      });
-      await askInstalledAppsAccess();
+      const notificationAction = await askPermissionChoice('notifications');
+      if (notificationAction === 'allow') {
+        const granted = await fcmService.requestPermission();
+        await setNotificationPermissionChoice(granted ? 'allowed' : 'deferred');
+      } else if (notificationAction === 'once') {
+        const granted = await fcmService.requestPermission();
+        await setNotificationPermissionChoice(granted ? 'allowed' : 'deferred');
+      } else {
+        await setNotificationPermissionChoice('deferred');
+      }
+
+      const appAccessAction = await askPermissionChoice('installedApps');
+      if (appAccessAction === 'allow') {
+        await setInstalledAppsAccessAllowed(true);
+        setInstalledAppsAccessForSession(true);
+      } else if (appAccessAction === 'once') {
+        await setInstalledAppsAccessAllowed(false);
+        setInstalledAppsAccessForSession(true);
+      } else {
+        await setInstalledAppsAccessAllowed(false);
+        setInstalledAppsAccessForSession(false);
+      }
       await setInitialPermissionPromptShown();
     };
 
@@ -314,12 +283,13 @@ function App(): JSX.Element {
     refreshUpdateAvailability();
 
     return () => {
+      permissionResolverRef.current = null;
       if (unsubscribeForegroundMessages) {
         unsubscribeForegroundMessages();
       }
       fcmService.unsubscribeFromAllTopics();
     };
-  }, []);
+  }, [askPermissionChoice]);
 
   useEffect(() => {
     // Re-subscribe to topics when notification settings change
@@ -327,24 +297,146 @@ function App(): JSX.Element {
   }, [settings.notifToggles]);
 
   return (
-    <NavigationContainer linking={linking}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Main" component={TabNavigator} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <>
+      <NavigationContainer linking={linking}>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Main" component={TabNavigator} />
+        </Stack.Navigator>
+      </NavigationContainer>
+
+      <Modal
+        visible={permissionPrompt !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => resolvePermissionChoice('deny')}
+      >
+        <View style={styles.permissionOverlay}>
+          <View style={styles.permissionSheet}>
+            <View style={styles.permissionIconWrap}>
+              <Icon
+                name={permissionPrompt === 'notifications' ? 'bell-outline' : 'apps'}
+                size={20}
+                color="#E7E7EA"
+              />
+            </View>
+
+            <Text style={styles.permissionTitle}>
+              {permissionPrompt === 'notifications'
+                ? 'Allow Reddif to send notifications?'
+                : 'Allow Reddif to access installed apps?'}
+            </Text>
+
+            {permissionPrompt === 'notifications' ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.permissionButton, styles.permissionPrimaryButton]}
+                  onPress={() => resolvePermissionChoice('allow')}
+                >
+                  <Text style={styles.permissionPrimaryText}>Allow only while using the app</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
+                  onPress={() => resolvePermissionChoice('deny')}
+                >
+                  <Text style={styles.permissionSecondaryText}>Deny</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
+                  onPress={() => resolvePermissionChoice('once')}
+                >
+                  <Text style={styles.permissionSecondaryText}>Only this time</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
+                  onPress={() => resolvePermissionChoice('deny')}
+                >
+                  <Text style={styles.permissionSecondaryText}>Deny</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
+                  onPress={() => resolvePermissionChoice('once')}
+                >
+                  <Text style={styles.permissionSecondaryText}>Only this time</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
+                  onPress={() => resolvePermissionChoice('allow')}
+                >
+                  <Text style={styles.permissionSecondaryText}>Allow all</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  headerBackgroundWrap: {
+  permissionOverlay: {
     flex: 1,
-    paddingHorizontal: 22,
-    paddingTop: 14,
-    paddingBottom: 8,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.68)',
+    paddingHorizontal: 16,
+    paddingBottom: 20,
   },
-  headerSurface: {
-    flex: 1,
-    borderRadius: 18,
+  permissionSheet: {
+    backgroundColor: '#232427',
+    borderRadius: 32,
+    borderWidth: 1,
+    borderColor: '#2E3036',
+    paddingHorizontal: 12,
+    paddingTop: 16,
+    paddingBottom: 12,
+    alignItems: 'center',
+  },
+  permissionIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#3A3C42',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  permissionTitle: {
+    color: '#F2F2F5',
+    fontSize: 22,
+    textAlign: 'center',
+    fontWeight: '600',
+    lineHeight: 30,
+    marginBottom: 14,
+  },
+  permissionButton: {
+    width: '100%',
+    minHeight: 62,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingHorizontal: 14,
+  },
+  permissionPrimaryButton: {
+    backgroundColor: '#4A86FF',
+  },
+  permissionSecondaryButton: {
+    backgroundColor: '#4A4B4F',
+  },
+  permissionPrimaryText: {
+    color: '#EAF1FF',
+    fontSize: 17,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  permissionSecondaryText: {
+    color: '#F0F0F1',
+    fontSize: 17,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,

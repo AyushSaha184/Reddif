@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const INITIAL_PERMISSION_PROMPTED_KEY = '@initial_permission_prompted';
 const INSTALLED_APPS_ACCESS_KEY = '@installed_apps_access_allowed';
 const NOTIFICATION_PERMISSION_CHOICE_KEY = '@notification_permission_choice';
+let installedAppsAccessSessionAllowed = false;
 
 type NotificationPermissionChoice = 'allowed' | 'deferred';
 
@@ -17,11 +18,15 @@ export const setInitialPermissionPromptShown = async (): Promise<void> => {
 
 export const isInstalledAppsAccessAllowed = async (): Promise<boolean> => {
   const value = await AsyncStorage.getItem(INSTALLED_APPS_ACCESS_KEY);
-  return value === 'true';
+  return value === 'true' || installedAppsAccessSessionAllowed;
 };
 
 export const setInstalledAppsAccessAllowed = async (allowed: boolean): Promise<void> => {
   await AsyncStorage.setItem(INSTALLED_APPS_ACCESS_KEY, allowed ? 'true' : 'false');
+};
+
+export const setInstalledAppsAccessForSession = (allowed: boolean): void => {
+  installedAppsAccessSessionAllowed = allowed;
 };
 
 export const getNotificationPermissionChoice = async (): Promise<NotificationPermissionChoice | null> => {
