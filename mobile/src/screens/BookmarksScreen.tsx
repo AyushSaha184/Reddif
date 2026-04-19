@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Alert,
   FlatList,
   SafeAreaView,
   StatusBar,
@@ -11,7 +10,6 @@ import {
 
 import { PostListItem } from '../components/PostListItem';
 import { useAppStore } from '../store/useAppStore';
-import { Post } from '../types';
 
 const getThemeBackground = (theme: 'system' | 'dark' | 'amoled') =>
   theme === 'amoled' ? '#000000' : '#0A0A0A';
@@ -20,21 +18,6 @@ export function BookmarksScreen() {
   const { bookmarks, removeBookmark, settings } = useAppStore();
   const backgroundColor = getThemeBackground(settings.theme);
   const sortedBookmarks = [...bookmarks].sort((a, b) => b.createdAt - a.createdAt);
-
-  const handleRemove = (post: Post) => {
-    Alert.alert(
-      'Remove Bookmark',
-      'Are you sure you want to remove this bookmark?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => removeBookmark(post.id),
-        },
-      ],
-    );
-  };
 
   if (bookmarks.length === 0) {
     return (
@@ -57,7 +40,7 @@ export function BookmarksScreen() {
             post={item}
             accentColor={settings.accentColor}
             isBookmarked
-            onToggleBookmark={() => handleRemove(item)}
+            onToggleBookmark={() => removeBookmark(item.id)}
           />
         )}
         keyExtractor={item => item.id}

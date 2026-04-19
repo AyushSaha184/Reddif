@@ -3,7 +3,6 @@ import {
   Alert,
   Linking,
   Modal,
-  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -19,7 +18,6 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { getBackendUrl, setBackendUrl } from '../services/apiService';
 import { fcmService } from '../services/fcmService';
 import { hasHmacSecretConfigured, setHmacSecret } from '../services/hmacService';
-import { isInstalledAppsAccessAllowed } from '../services/permissionPrefs';
 import { useAppStore } from '../store/useAppStore';
 import { Settings } from '../types';
 
@@ -295,51 +293,22 @@ export function SettingsScreen() {
           style={styles.systemButton}
           onPress={() => Linking.openSettings()}
         >
-          <Text style={styles.systemButtonText}>
-            Open System Notification Settings
-          </Text>
-          <Icon name="open-in-new" size={16} color={draftSettings.accentColor} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.systemButton}
-          onPress={async () => {
-            const redditUrl = 'reddit://';
-            const appStoreUrl = 'https://apps.apple.com/app/reddit/id1064216828';
-            const playStoreUrl = 'market://details?id=com.reddit.frontpage';
-            const playStoreWebUrl = 'https://play.google.com/store/apps/details?id=com.reddit.frontpage';
-            const canOpenInstalledApps = await isInstalledAppsAccessAllowed();
-
-            if (canOpenInstalledApps) {
-              try {
-                await Linking.openURL(redditUrl);
-                return;
-              } catch (error) {
-                // Fall through to store links below.
-              }
-            }
-
-            try {
-              if (Platform.OS === 'android') {
-                await Linking.openURL(playStoreUrl);
-              } else {
-                await Linking.openURL(appStoreUrl);
-              }
-            } catch (storeError) {
-              await Linking.openURL(Platform.OS === 'android' ? playStoreWebUrl : appStoreUrl);
-            }
-          }}
-        >
-          <Text style={styles.systemButtonText}>Open Reddit</Text>
-          <Icon name="reddit" size={16} color={draftSettings.accentColor} />
+          <View style={styles.buttonContentCenter}>
+            <Text style={styles.systemButtonText}>
+              Open System Notification Settings
+            </Text>
+            <Icon name="open-in-new" size={16} color={draftSettings.accentColor} />
+          </View>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.saveSettingsButton, { backgroundColor: draftSettings.accentColor }]}
           onPress={handleSaveSettings}
         >
-          <Text style={styles.saveSettingsText}>Save Settings</Text>
-          <Icon name="content-save" size={16} color="#FFFFFF" />
+          <View style={styles.buttonContentCenter}>
+            <Text style={styles.saveSettingsText}>Save Settings</Text>
+            <Icon name="content-save" size={16} color="#FFFFFF" />
+          </View>
         </TouchableOpacity>
 
         {feedbackMessage ? (
@@ -600,24 +569,22 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   systemButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginTop: 24,
     padding: 16,
     backgroundColor: '#14171B',
     borderRadius: 16,
-    gap: 8,
     borderWidth: 1,
     borderColor: '#1E2329',
   },
   saveSettingsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginTop: 24,
     padding: 16,
     borderRadius: 16,
+  },
+  buttonContentCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
   },
   saveSettingsText: {

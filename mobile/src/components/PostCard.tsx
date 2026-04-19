@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Linking,
   Share,
   Dimensions,
   Animated,
@@ -69,15 +68,6 @@ export function PostCard({ post, isActive }: PostCardProps) {
     }).start();
   };
 
-  const handleOpenInReddit = async () => {
-    const redditUrl = `reddit://comments/${post.id}`;
-    try {
-      await Linking.openURL(redditUrl);
-    } catch (error) {
-      await Linking.openURL(post.permalink);
-    }
-  };
-
   const handleShare = async () => {
     try {
       await Share.share({
@@ -137,12 +127,6 @@ export function PostCard({ post, isActive }: PostCardProps) {
                 size={20}
                 color={bookmarked ? '#007AFF' : '#666'}
               />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleOpenInReddit}>
-              <Icon name="open-in-new" size={20} color="#666" />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionButton} onPress={handleShare}>

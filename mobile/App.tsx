@@ -32,10 +32,8 @@ import {
 import {
   getNotificationPermissionChoice,
   hasShownInitialPermissionPrompt,
-  setInstalledAppsAccessForSession,
   setNotificationPermissionChoice,
   setInitialPermissionPromptShown,
-  setInstalledAppsAccessAllowed,
 } from './src/services/permissionPrefs';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -96,14 +94,13 @@ function TabNavigator() {
                 paddingHorizontal: 14,
                 paddingVertical: 8,
                 borderRadius: 18,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
                 minHeight: 36,
               }}
             >
-              <Icon name="update" size={18} color={settings.accentColor} style={{ marginRight: 6 }} />
-              <Text style={{ color: settings.accentColor, fontWeight: 'bold' }}>Update App</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Icon name="update" size={18} color={settings.accentColor} />
+                <Text style={{ color: settings.accentColor, fontWeight: 'bold', lineHeight: 18 }}>Update App</Text>
+              </View>
             </TouchableOpacity>
           );
         },
@@ -208,7 +205,7 @@ function TabNavigator() {
 
 function App(): JSX.Element {
   const { settings, clearExpiredPosts } = useAppStore();
-  const [permissionPrompt, setPermissionPrompt] = React.useState<'notifications' | 'installedApps' | null>(null);
+  const [permissionPrompt, setPermissionPrompt] = React.useState<'notifications' | null>(null);
   const permissionResolverRef = React.useRef<((value: string) => void) | null>(null);
 
   const syncTopicSubscriptions = React.useCallback(async (reason: string): Promise<void> => {
@@ -220,7 +217,7 @@ function App(): JSX.Element {
   }, []);
 
   const askPermissionChoice = React.useCallback(
-    (promptType: 'notifications' | 'installedApps'): Promise<string> => {
+    (promptType: 'notifications'): Promise<string> => {
       return new Promise((resolve) => {
         permissionResolverRef.current = resolve;
         setPermissionPrompt(promptType);
@@ -263,17 +260,6 @@ function App(): JSX.Element {
         await setNotificationPermissionChoice('deferred');
       }
 
-      const appAccessAction = await askPermissionChoice('installedApps');
-      if (appAccessAction === 'allow') {
-        await setInstalledAppsAccessAllowed(true);
-        setInstalledAppsAccessForSession(true);
-      } else if (appAccessAction === 'once') {
-        await setInstalledAppsAccessAllowed(false);
-        setInstalledAppsAccessForSession(true);
-      } else {
-        await setInstalledAppsAccessAllowed(false);
-        setInstalledAppsAccessForSession(false);
-      }
       await setInitialPermissionPromptShown();
     };
 
@@ -338,62 +324,33 @@ function App(): JSX.Element {
         <View style={styles.permissionOverlay}>
           <View style={styles.permissionSheet}>
             <View style={styles.permissionIconWrap}>
-              <Icon
-                name={permissionPrompt === 'notifications' ? 'bell-outline' : 'apps'}
-                size={20}
-                color="#E7E7EA"
-              />
+              <Icon name="bell-outline" size={20} color="#E7E7EA" />
             </View>
 
             <Text style={styles.permissionTitle}>
-              {permissionPrompt === 'notifications'
-                ? 'Allow Reddif to send notifications?'
-                : 'Allow Reddif to access installed apps?'}
+              Allow Reddif to send notifications?
             </Text>
 
-            {permissionPrompt === 'notifications' ? (
-              <>
-                <TouchableOpacity
-                  style={[styles.permissionButton, styles.permissionPrimaryButton]}
-                  onPress={() => resolvePermissionChoice('allow')}
-                >
-                  <Text style={styles.permissionPrimaryText}>Allow only while using the app</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
-                  onPress={() => resolvePermissionChoice('deny')}
-                >
-                  <Text style={styles.permissionSecondaryText}>Deny</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
-                  onPress={() => resolvePermissionChoice('once')}
-                >
-                  <Text style={styles.permissionSecondaryText}>Only this time</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity
-                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
-                  onPress={() => resolvePermissionChoice('deny')}
-                >
-                  <Text style={styles.permissionSecondaryText}>Deny</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
-                  onPress={() => resolvePermissionChoice('once')}
-                >
-                  <Text style={styles.permissionSecondaryText}>Only this time</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.permissionButton, styles.permissionSecondaryButton]}
-                  onPress={() => resolvePermissionChoice('allow')}
-                >
-                  <Text style={styles.permissionSecondaryText}>Allow all</Text>
-                </TouchableOpacity>
-              </>
-            )}
+            <>
+              <TouchableOpacity
+                style={[styles.permissionButton, styles.permissionPrimaryButton]}
+                onPress={() => resolvePermissionChoice('allow')}
+              >
+                <Text style={styles.permissionPrimaryText}>Allow only while using the app</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.permissionButton, styles.permissionSecondaryButton]}
+                onPress={() => resolvePermissionChoice('deny')}
+              >
+                <Text style={styles.permissionSecondaryText}>Deny</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.permissionButton, styles.permissionSecondaryButton]}
+                onPress={() => resolvePermissionChoice('once')}
+              >
+                <Text style={styles.permissionSecondaryText}>Only this time</Text>
+              </TouchableOpacity>
+            </>
           </View>
         </View>
       </Modal>
