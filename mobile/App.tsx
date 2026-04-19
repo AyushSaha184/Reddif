@@ -88,18 +88,11 @@ function TabNavigator() {
           return (
             <TouchableOpacity
               onPress={openUpdateModal}
-              style={{
-                marginRight: 16,
-                backgroundColor: settings.accentColor + '26',
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                borderRadius: 18,
-                minHeight: 36,
-              }}
+              style={[styles.updateButton, { backgroundColor: settings.accentColor + '26' }]}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+              <View style={styles.updateButtonContent}>
                 <Icon name="update" size={18} color={settings.accentColor} />
-                <Text style={{ color: settings.accentColor, fontWeight: 'bold', lineHeight: 18 }}>Update App</Text>
+                <Text style={[styles.updateButtonText, { color: settings.accentColor }]}>Update App</Text>
               </View>
             </TouchableOpacity>
           );
@@ -359,6 +352,27 @@ function App(): JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  updateButton: {
+    marginRight: 16,
+    minHeight: 36,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  updateButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  updateButtonText: {
+    fontWeight: '700',
+    lineHeight: 18,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
   permissionOverlay: {
     flex: 1,
     justifyContent: 'flex-end',

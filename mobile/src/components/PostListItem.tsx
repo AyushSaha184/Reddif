@@ -1,14 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
   Image,
+  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextLayoutEventData,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -17,6 +19,13 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Post } from '../types';
 
 const CARD_WIDTH = Dimensions.get('window').width - 32;
+const DEFAULT_IMAGE_HEIGHT = 220;
+const MIN_IMAGE_HEIGHT = 180;
+const MAX_IMAGE_HEIGHT = 320;
+const REDDIT_LOGO_URI = 'https://www.redditstatic.com/desktop2x/img/favicon/apple-icon-57x57.png';
+const SHARE_ICON_URI = 'https://img.icons8.com/ios/50/share.png';
+const BOOKMARK_ICON_URI = 'https://img.icons8.com/ios-filled/50/bookmark.png';
+const BOOKMARK_OUTLINE_ICON_URI = 'https://img.icons8.com/ios/50/bookmark--edge.png';
 
 interface PostListItemProps {
   post: Post;
@@ -64,15 +73,19 @@ export function PostListItem({
   onToggleBookmark,
 }: PostListItemProps) {
   const appearAnim = useRef(new Animated.Value(0)).current;
+  const imageScrollRef = useRef<ScrollView>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isBodyExpanded, setIsBodyExpanded] = useState(false);
+  const [hasBodyOverflow, setHasBodyOverflow] = useState(false);
+  const [imageHeights, setImageHeights] = useState<Record<number, number>>({});
+  const [showRedditLogoFallback, setShowRedditLogoFallback] = useState(false);
+  const [showShareIconFallback, setShowShareIconFallback] = useState(false);
+  const [showBookmarkIconFallback, setShowBookmarkIconFallback] = useState(false);
 
   const hasImages = post.imageUrls.length > 0;
   const hasMultipleImages = post.imageUrls.length > 1;
   const hasBody = Boolean(post.body && post.body.trim().length > 0);
-  const shouldShowBodyExpand = useMemo(() => {
-    return (post.body || '').trim().length > 140;
-  }, [post.body]);
+  const activeImageHeight = imageHeights[currentImageIndex] ?? DEFAULT_IMAGE_HEIGHT;
 
   useEffect(() => {
     Animated.timing(appearAnim, {
@@ -81,6 +94,17 @@ export function PostListItem({
       useNativeDriver: true,
     }).start();
   }, [appearAnim, post.id]);
+
+  useEffect(() => {
+    setHasBodyOverflow(false);
+    setIsBodyExpanded(false);
+    setCurrentImageIndex(0);
+    setImageHeights({});
+    setShowRedditLogoFallback(false);
+    setShowShareIconFallback(false);
+    setShowBookmarkIconFallback(false);
+    imageScrollRef.current?.scrollTo({ x: 0, animated: false });
+  }, [post.id, post.body]);
 
   const handleShare = async () => {
     try {
@@ -93,12 +117,53 @@ export function PostListItem({
     }
   };
 
+  const handleOpenInReddit = async () => {
+    const redditUrl = `reddit://comments/${post.id}`;
+    try {
+      await Linking.openURL(redditUrl);
+    } catch {
+      try {
+        await Linking.openURL(post.permalink);
+      } catch {
+        // no-op
+      }
+    }
+  };
+
   const handleImageMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / CARD_WIDTH);
     if (index !== currentImageIndex) {
       setCurrentImageIndex(index);
     }
+  };
+
+  const handleImageLoad = (
+    index: number,
+    event: NativeSyntheticEvent<{ source: { width: number; height: number } }>
+  ) => {
+    const width = event.nativeEvent.source?.width;
+    const height = event.nativeEvent.source?.height;
+    if (!width || !height) {
+      return;
+    }
+
+    const scaledHeight = (CARD_WIDTH * height) / width;
+    const boundedHeight = Math.max(MIN_IMAGE_HEIGHT, Math.min(MAX_IMAGE_HEIGHT, scaledHeight));
+
+    setImageHeights(prev => {
+      if (prev[index] === boundedHeight) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [index]: boundedHeight,
+      };
+    });
+  };
+
+  const handleBodyTextLayout = (event: NativeSyntheticEvent<TextLayoutEventData>) => {
+    setHasBodyOverflow(event.nativeEvent.lines.length > 3);
   };
 
   return (
@@ -120,18 +185,22 @@ export function PostListItem({
     >
       {hasImages ? (
         <ScrollView
+          ref={imageScrollRef}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={handleImageMomentumEnd}
+          nestedScrollEnabled
+          scrollEventThrottle={16}
           decelerationRate="fast"
-          style={styles.imageStrip}
+          style={[styles.imageStrip, { height: activeImageHeight }]}
         >
           {post.imageUrls.map((uri, index) => (
             <Image
               key={`${post.id}-${index}`}
               source={{ uri }}
-              style={styles.cardImage}
+              onLoad={event => handleImageLoad(index, event)}
+              style={[styles.cardImage, { height: activeImageHeight }]}
               resizeMode="contain"
             />
           ))}
@@ -170,10 +239,14 @@ export function PostListItem({
 
         {hasBody ? (
           <>
-            <Text style={styles.bodyText} numberOfLines={isBodyExpanded ? undefined : 3}>
+            <Text
+              style={styles.bodyText}
+              numberOfLines={isBodyExpanded ? undefined : 3}
+              onTextLayout={handleBodyTextLayout}
+            >
               {post.body}
             </Text>
-            {shouldShowBodyExpand ? (
+            {hasBodyOverflow ? (
               <TouchableOpacity
                 onPress={() => setIsBodyExpanded(prev => !prev)}
                 style={styles.expandButton}
@@ -189,16 +262,50 @@ export function PostListItem({
         ) : null}
 
         <View style={styles.actionsRow}>
+          <TouchableOpacity onPress={handleOpenInReddit} style={styles.actionButton}>
+            {showRedditLogoFallback ? (
+              <Icon name="open-in-new" size={19} color="#A6AFBB" />
+            ) : (
+              <Image
+                source={{ uri: REDDIT_LOGO_URI }}
+                onError={() => setShowRedditLogoFallback(true)}
+                style={styles.redditLogo}
+                resizeMode="contain"
+              />
+            )}
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={handleShare} style={styles.actionButton}>
-            <Icon name="share-variant-outline" size={18} color="#A6AFBB" />
+            {showShareIconFallback ? (
+              <Icon name="share-variant-outline" size={19} color="#A6AFBB" />
+            ) : (
+              <Image
+                source={{ uri: SHARE_ICON_URI }}
+                onError={() => setShowShareIconFallback(true)}
+                style={[styles.actionRemoteIcon, { tintColor: '#A6AFBB' }]}
+                resizeMode="contain"
+              />
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity onPress={onToggleBookmark} style={styles.actionButton}>
-            <Icon
-              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-              size={18}
-              color={isBookmarked ? accentColor : '#A6AFBB'}
-            />
+            {showBookmarkIconFallback ? (
+              <Icon
+                name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
+                size={19}
+                color={isBookmarked ? accentColor : '#A6AFBB'}
+              />
+            ) : (
+              <Image
+                source={{ uri: isBookmarked ? BOOKMARK_ICON_URI : BOOKMARK_OUTLINE_ICON_URI }}
+                onError={() => setShowBookmarkIconFallback(true)}
+                style={[
+                  styles.actionRemoteIcon,
+                  { tintColor: isBookmarked ? accentColor : '#A6AFBB' },
+                ]}
+                resizeMode="contain"
+              />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -293,17 +400,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 10,
+    gap: 8,
     marginTop: 6,
   },
   actionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#33404D',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#171D25',
+  },
+  redditLogo: {
+    width: 19,
+    height: 19,
+  },
+  actionRemoteIcon: {
+    width: 19,
+    height: 19,
   },
 });

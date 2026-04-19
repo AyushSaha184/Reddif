@@ -46,6 +46,9 @@ export function BookmarksScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
+        removeClippedSubviews={false}
+        maxToRenderPerBatch={8}
+        windowSize={7}
         decelerationRate="fast"
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}

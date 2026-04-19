@@ -586,11 +586,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    alignSelf: 'center',
   },
   saveSettingsText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+    includeFontPadding: false,
+    lineHeight: 18,
   },
   feedbackCard: {
     marginTop: 14,
@@ -612,6 +615,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+    includeFontPadding: false,
+    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,
