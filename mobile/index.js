@@ -9,7 +9,7 @@ import {name as appName} from './app.json';
 import {handleIncomingFCMData} from './src/services/fcmService';
 
 messaging().setBackgroundMessageHandler(async remoteMessage => {
-	await handleIncomingFCMData(remoteMessage?.data);
+	await handleIncomingFCMData(remoteMessage?.data, {isBackgroundHandler: true});
 });
 
 AppRegistry.registerComponent(appName, () => App);

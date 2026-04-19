@@ -89,7 +89,14 @@ const parseImageUrls = (raw: string | undefined): string[] => {
   }
 };
 
-export const handleIncomingFCMData = async (message: FCMMessage | undefined): Promise<void> => {
+interface HandleIncomingOptions {
+  isBackgroundHandler?: boolean;
+}
+
+export const handleIncomingFCMData = async (
+  message: FCMMessage | undefined,
+  options: HandleIncomingOptions = {}
+): Promise<void> => {
   if (!message) {
     return;
   }
@@ -121,15 +128,19 @@ export const handleIncomingFCMData = async (message: FCMMessage | undefined): Pr
         };
 
         addPost(post);
-        try {
-          await notifeeService.showNewPostNotification(
-            post.title,
-            post.flair,
-            post.detectedBudget
-          );
-        } catch (error) {
-          // Keep data handling successful even if local notification display fails.
-          console.warn('Failed to show NEW_POST notification', error);
+        // NEW_POST already contains an FCM notification payload from backend.
+        // In background, Android auto-displays it, so skip local notifee to avoid duplicates.
+        if (!options.isBackgroundHandler) {
+          try {
+            await notifeeService.showNewPostNotification(
+              post.title,
+              post.flair,
+              post.detectedBudget
+            );
+          } catch (error) {
+            // Keep data handling successful even if local notification display fails.
+            console.warn('Failed to show NEW_POST notification', error);
+          }
         }
       }
       break;
