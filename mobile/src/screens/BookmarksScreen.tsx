@@ -20,6 +20,7 @@ const getThemeBackground = (theme: 'system' | 'dark' | 'amoled') =>
 export function BookmarksScreen() {
   const { bookmarks, removeBookmark, settings } = useAppStore();
   const backgroundColor = getThemeBackground(settings.theme);
+  const sortedBookmarks = [...bookmarks].sort((a, b) => b.createdAt - a.createdAt);
 
   const openPost = async (post: Post) => {
     const redditUrl = `reddit://comments/${post.id}`;
@@ -60,7 +61,7 @@ export function BookmarksScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor }]}>
       <StatusBar barStyle="light-content" backgroundColor={backgroundColor} />
       <FlatList
-        data={bookmarks}
+        data={sortedBookmarks}
         renderItem={({ item }) => (
           <PostListItem
             post={item}
@@ -74,6 +75,8 @@ export function BookmarksScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
+        decelerationRate="fast"
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       />
     </SafeAreaView>
@@ -88,12 +91,11 @@ const styles = StyleSheet.create({
   },
   list: {
     width: '100%',
+    paddingTop: 8,
     paddingBottom: 110,
   },
   separator: {
-    height: 1,
-    marginLeft: 88,
-    backgroundColor: '#14181D',
+    height: 14,
   },
   emptyText: {
     color: '#FFFFFF',

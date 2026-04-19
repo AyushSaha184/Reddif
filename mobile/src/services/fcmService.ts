@@ -1,4 +1,5 @@
 import messaging from '@react-native-firebase/messaging';
+import {PermissionsAndroid, Platform} from 'react-native';
 import {FCMMessage, Post} from '../types';
 import {useAppStore} from '../store/useAppStore';
 import {notifeeService} from './notifeeService';
@@ -9,6 +10,8 @@ const FLAIR_TO_TOPIC: Record<string, string> = {
   free: 'free_posts',
 };
 
+const LEGACY_TOPICS = ['paid_noai', 'paid_ai', 'free'];
+
 const normalizeFlair = (flair: string | undefined): string => {
   if (!flair) {
     return '';
@@ -17,8 +20,41 @@ const normalizeFlair = (flair: string | undefined): string => {
   return flair
     .trim()
     .toLowerCase()
-    .replace(/\s*-\s*/g, '-')
-    .replace(/\s+/g, '-');
+    .replace(/:[a-z0-9_+-]+:/g, ' ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+};
+
+const canonicalizeFlairLabel = (flair: string | undefined): string => {
+  const normalized = normalizeFlair(flair);
+  const hasPaidToken = /(?:^|-)paid(?:-|$)/.test(normalized);
+  const hasNoAiToken = /(?:^|-)no-ai(?:-|$)/.test(normalized);
+  const hasAiOkToken = /(?:^|-)ai-ok(?:-|$)/.test(normalized);
+  const hasAiToken = /(?:^|-)ai(?:-|$)/.test(normalized);
+  const hasOkToken = /(?:^|-)ok(?:-|$)/.test(normalized);
+
+  if (!normalized) {
+    return 'Unknown';
+  }
+
+  if (/^solved(?:-|$)/.test(normalized)) {
+    return 'Solved';
+  }
+
+  if (/^free(?:-|$)/.test(normalized)) {
+    return 'Free';
+  }
+
+  if (hasPaidToken && hasNoAiToken) {
+    return 'Paid - No AI';
+  }
+
+  if (hasPaidToken && (hasAiOkToken || (hasAiToken && hasOkToken))) {
+    return 'Paid - AI OK';
+  }
+
+  return flair || 'Unknown';
 };
 
 const isFlairEnabled = (flair: string | undefined): boolean => {
@@ -74,8 +110,9 @@ export const handleIncomingFCMData = async (message: FCMMessage | undefined): Pr
 
         const post: Post = {
           id: message.postId,
-          flair: message.flair || 'Unknown',
+          flair: canonicalizeFlairLabel(message.flair),
           title: message.title || '',
+          body: message.body || '',
           permalink: message.permalink || '',
           imageUrls: parseImageUrls(message.imageUrls),
           detectedBudget: message.detectedBudget || null,
@@ -105,13 +142,14 @@ export const handleIncomingFCMData = async (message: FCMMessage | undefined): Pr
 
     case 'FLAIR_UPDATE':
       if (message.postId && message.newFlair) {
-        updatePostFlair(message.postId, message.newFlair);
+        const canonicalNewFlair = canonicalizeFlairLabel(message.newFlair);
+        updatePostFlair(message.postId, canonicalNewFlair);
 
-        if (isTracked(message.postId) && isFlairEnabled(message.newFlair)) {
+        if (isTracked(message.postId) && isFlairEnabled(canonicalNewFlair)) {
           const {posts} = useAppStore.getState();
           const post = posts.find((p) => p.id === message.postId);
           if (post) {
-            await notifeeService.showStatusUpdateNotification(post.title, message.newFlair);
+            await notifeeService.showStatusUpdateNotification(post.title, canonicalNewFlair);
           }
         }
       }
@@ -129,7 +167,34 @@ export const handleIncomingFCMData = async (message: FCMMessage | undefined): Pr
 };
 
 class FCMService {
+  private async hasNotificationPermission(): Promise<boolean> {
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      );
+      if (!granted) {
+        return false;
+      }
+    }
+
+    const authStatus = await messaging().hasPermission();
+    return (
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL
+    );
+  }
+
   async requestPermission(): Promise<boolean> {
+    // Android 13+ requires explicit POST_NOTIFICATIONS runtime permission.
+    if (Platform.OS === 'android' && Platform.Version >= 33) {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      );
+      if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+        return false;
+      }
+    }
+
     const authStatus = await messaging().requestPermission();
     const enabled =
       authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
@@ -140,6 +205,20 @@ class FCMService {
 
   async subscribeToTopics(): Promise<void> {
     const {settings} = useAppStore.getState();
+
+    const hasPermission = await this.hasNotificationPermission();
+    if (!hasPermission) {
+      await this.unsubscribeFromAllTopics();
+      return;
+    }
+
+    // Ensure device is registered and token exists before topic operations.
+    await messaging().registerDeviceForRemoteMessages();
+    const token = await messaging().getToken();
+    if (!token) {
+      console.warn('FCM token unavailable; skipping topic subscription sync');
+      return;
+    }
 
     const topicPlan = [
       {topic: FLAIR_TO_TOPIC['paid-no-ai'], enabled: settings.notifToggles.paidNoAI},
@@ -154,18 +233,32 @@ class FCMService {
         await messaging().unsubscribeFromTopic(topic);
       }
     }
+
+    // Keep modern clients off legacy aliases to prevent duplicate delivery.
+    for (const legacyTopic of LEGACY_TOPICS) {
+      await messaging().unsubscribeFromTopic(legacyTopic);
+    }
   }
 
   async unsubscribeFromAllTopics(): Promise<void> {
     for (const topic of Object.values(FLAIR_TO_TOPIC)) {
       await messaging().unsubscribeFromTopic(topic);
     }
+
+    for (const legacyTopic of LEGACY_TOPICS) {
+      await messaging().unsubscribeFromTopic(legacyTopic);
+    }
   }
 
   setupMessageHandlers(): () => void {
     // Foreground messages
     const unsubscribe = messaging().onMessage(async (remoteMessage) => {
-      await handleIncomingFCMData(remoteMessage.data as FCMMessage);
+      const data = remoteMessage.data;
+      if (!data || typeof data.type !== 'string') {
+        return;
+      }
+
+      await handleIncomingFCMData(data as unknown as FCMMessage);
     });
 
     return unsubscribe;

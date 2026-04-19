@@ -41,10 +41,11 @@ export function FeedScreen() {
   }, [clearExpiredPosts, clearUnread]);
 
   const filteredPosts = useMemo(() => {
+    const sortedByLatest = [...posts].sort((a, b) => b.createdAt - a.createdAt);
     if (selectedFlair === 'All') {
-      return posts;
+      return sortedByLatest;
     }
-    return posts.filter(post => post.flair === selectedFlair);
+    return sortedByLatest.filter(post => post.flair === selectedFlair);
   }, [posts, selectedFlair]);
 
   const openPost = async (post: Post) => {
@@ -76,6 +77,12 @@ export function FeedScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          decelerationRate="fast"
+          scrollEventThrottle={16}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          removeClippedSubviews={false}
+          maxToRenderPerBatch={8}
+          windowSize={7}
           renderItem={({ item }) => {
             const bookmarked = isBookmarked(item.id);
 
@@ -96,7 +103,6 @@ export function FeedScreen() {
               />
             );
           }}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
         />
       ) : (
         <View style={styles.emptyContainer}>
@@ -113,12 +119,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
+    paddingTop: 8,
     paddingBottom: 110,
   },
   separator: {
-    height: 1,
-    marginLeft: 88,
-    backgroundColor: '#14181D',
+    height: 14,
   },
   emptyContainer: {
     flex: 1,

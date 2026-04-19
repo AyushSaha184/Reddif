@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
@@ -186,6 +186,7 @@ def handle_new_submission(
         post_id=parsed.post_id,
         flair=parsed.flair,
         title=parsed.title,
+        body=parsed.selftext,
         permalink=parsed.permalink,
         image_urls=parsed.image_urls,
         detected_budget=parsed.detected_budget,
@@ -268,6 +269,12 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "X-Signature", "Content-Type"],
 )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    """Return no-content for browser favicon probes to avoid noisy 404 logs."""
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/health")

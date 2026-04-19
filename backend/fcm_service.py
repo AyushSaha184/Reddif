@@ -10,11 +10,20 @@ from firebase_admin import credentials, initialize_app, messaging
 
 logger = structlog.get_logger(__name__)
 
+MAX_BODY_CHARS = 220
+
 # Flair to FCM topic mapping
 FLAIR_TO_TOPIC = {
     "Paid - No AI": "paid_no_ai",
     "Paid - AI OK": "paid_ai_ok",
     "Free": "free_posts",
+}
+
+# Backward-compatible topic aliases for older mobile app builds.
+TOPIC_ALIASES = {
+    "paid_no_ai": ["paid_no_ai", "paid_noai"],
+    "paid_ai_ok": ["paid_ai_ok", "paid_ai"],
+    "free_posts": ["free_posts", "free"],
 }
 
 
@@ -24,10 +33,38 @@ def normalize_flair(flair: str | None) -> str:
         return ""
 
     normalized = flair.strip().lower()
-    normalized = re.sub(r"\s*-\s*", "-", normalized)
-    normalized = re.sub(r"\s+", "-", normalized)
-    normalized = re.sub(r"-+", "-", normalized)
+    # Remove Reddit emoji tokens like :no-ai: / :snoo:
+    normalized = re.sub(r":[a-z0-9_+-]+:", " ", normalized)
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
+    normalized = re.sub(r"-+", "-", normalized).strip("-")
     return normalized
+
+
+def canonicalize_flair(flair: str | None) -> str | None:
+    """Map flair variants to canonical labels used across backend and mobile."""
+    normalized = normalize_flair(flair)
+    if not normalized:
+        return None
+
+    if re.match(r"^solved(?:-|$)", normalized):
+        return "Solved"
+
+    if re.match(r"^free(?:-|$)", normalized):
+        return "Free"
+
+    has_paid_token = bool(re.search(r"(?:^|-)paid(?:-|$)", normalized))
+    has_no_ai_token = bool(re.search(r"(?:^|-)no-ai(?:-|$)", normalized))
+    has_ai_ok_token = bool(re.search(r"(?:^|-)ai-ok(?:-|$)", normalized))
+    has_ai_token = bool(re.search(r"(?:^|-)ai(?:-|$)", normalized))
+    has_ok_token = bool(re.search(r"(?:^|-)ok(?:-|$)", normalized))
+
+    if has_paid_token and has_no_ai_token:
+        return "Paid - No AI"
+
+    if has_paid_token and (has_ai_ok_token or (has_ai_token and has_ok_token)):
+        return "Paid - AI OK"
+
+    return None
 
 
 NORMALIZED_FLAIR_TO_TOPIC = {
@@ -64,64 +101,88 @@ class FCMService:
 
     def _get_topic(self, flair: str) -> str | None:
         """Get FCM topic for a flair."""
-        return NORMALIZED_FLAIR_TO_TOPIC.get(normalize_flair(flair))
+        canonical_flair = canonicalize_flair(flair)
+        if not canonical_flair:
+            return None
+        return NORMALIZED_FLAIR_TO_TOPIC.get(normalize_flair(canonical_flair))
+
+    def _get_topics(self, flair: str) -> list[str]:
+        """Get canonical + legacy topics for a flair."""
+        topic = self._get_topic(flair)
+        if not topic:
+            return []
+
+        aliases = TOPIC_ALIASES.get(topic, [topic])
+        deduped = list(dict.fromkeys(aliases))
+        return deduped
 
     def send_new_post_notification(
         self,
         post_id: str,
         flair: str,
         title: str,
+        body: str,
         permalink: str,
         image_urls: list[str],
         detected_budget: str | None,
         created_at: int,
     ) -> bool:
         """Send notification for new post with notification + data payload."""
-        topic = self._get_topic(flair)
-        if not topic:
+        canonical_flair = canonicalize_flair(flair) or flair
+        topics = self._get_topics(canonical_flair)
+        if not topics:
             logger.warning("no_topic_mapping", flair=flair, post_id=post_id)
             return False
 
         try:
             # Build notification body
-            body = f"💰 {detected_budget}" if detected_budget else "New request"
+            notification_preview = (
+                f"💰 {detected_budget}" if detected_budget else "New request"
+            )
             truncated_title = title[:50] + "..." if len(title) > 50 else title
+            truncated_body = (body or "")[:MAX_BODY_CHARS]
 
             # Build data payload
             data_payload = {
                 "type": "NEW_POST",
                 "postId": post_id,
-                "flair": flair,
+                "flair": canonical_flair,
                 "title": title,
+                "body": truncated_body,
                 "permalink": permalink,
                 "imageUrls": json.dumps(image_urls),
                 "detectedBudget": detected_budget or "",
                 "createdAt": str(created_at),
             }
 
-            message = messaging.Message(
-                notification=messaging.Notification(
-                    title=f"[{flair}] {truncated_title}",
-                    body=body,
-                ),
-                data=data_payload,
-                android=messaging.AndroidConfig(
-                    priority="high",
-                    ttl=172800,  # 48 hours
-                    direct_boot_ok=True,
-                ),
-                topic=topic,
-            )
+            delivered = False
 
-            response = messaging.send(message)
-            logger.info(
-                "fcm_notification_sent",
-                post_id=post_id,
-                flair=flair,
-                topic=topic,
-                notification_id=response,
-            )
-            return True
+            for topic in topics:
+                message = messaging.Message(
+                    notification=messaging.Notification(
+                        title=f"[{canonical_flair}] {truncated_title}",
+                        body=notification_preview,
+                    ),
+                    data=data_payload,
+                    android=messaging.AndroidConfig(
+                        priority="high",
+                        ttl=172800,  # 48 hours
+                        direct_boot_ok=True,
+                    ),
+                    topic=topic,
+                )
+
+                response = messaging.send(message)
+                logger.info(
+                    "fcm_notification_sent",
+                    post_id=post_id,
+                    flair=canonical_flair,
+                    topic=topic,
+                    notification_id=response,
+                )
+                delivered = True
+
+            return delivered
 
         except Exception as e:
             logger.error(
@@ -133,37 +194,45 @@ class FCMService:
         self, post_id: str, new_flair: str, old_flair: str | None = None
     ) -> bool:
         """Send data-only notification for flair update."""
+        canonical_new_flair = canonicalize_flair(new_flair) or new_flair
+        canonical_old_flair = canonicalize_flair(old_flair) if old_flair else None
+
         # Determine topic based on new flair or old flair
-        topic = self._get_topic(new_flair) or (
-            self._get_topic(old_flair) if old_flair else None
-        )
-        if not topic:
+        topics = self._get_topics(canonical_new_flair)
+        if not topics and canonical_old_flair:
+            topics = self._get_topics(canonical_old_flair)
+
+        if not topics:
             logger.warning(
                 "no_topic_for_flair_update", new_flair=new_flair, post_id=post_id
             )
             return False
 
         try:
-            message = messaging.Message(
-                data={
-                    "type": "FLAIR_UPDATE",
-                    "postId": post_id,
-                    "newFlair": new_flair,
-                },
-                android=messaging.AndroidConfig(priority="high", direct_boot_ok=True),
-                topic=topic,
-            )
+            delivered = False
+            for topic in topics:
+                message = messaging.Message(
+                    data={
+                        "type": "FLAIR_UPDATE",
+                        "postId": post_id,
+                        "newFlair": canonical_new_flair,
+                    },
+                    android=messaging.AndroidConfig(priority="high", direct_boot_ok=True),
+                    topic=topic,
+                )
 
-            response = messaging.send(message)
-            logger.info(
-                "fcm_flair_update_sent",
-                post_id=post_id,
-                old_flair=old_flair,
-                new_flair=new_flair,
-                topic=topic,
-                notification_id=response,
-            )
-            return True
+                response = messaging.send(message)
+                logger.info(
+                    "fcm_flair_update_sent",
+                    post_id=post_id,
+                    old_flair=canonical_old_flair,
+                    new_flair=canonical_new_flair,
+                    topic=topic,
+                    notification_id=response,
+                )
+                delivered = True
+
+            return delivered
 
         except Exception as e:
             logger.error(
@@ -213,26 +282,31 @@ class FCMService:
 
     def send_solved_notification(self, post_id: str, flair: str) -> bool:
         """Send data-only notification when post is marked as solved."""
-        topic = self._get_topic(flair)
-        if not topic:
-            topic = "free_posts"  # Fallback topic
+        canonical_flair = canonicalize_flair(flair) or flair
+        topics = self._get_topics(canonical_flair)
+        if not topics:
+            topics = TOPIC_ALIASES.get("free_posts", ["free_posts"])  # Fallback topics
 
         try:
-            message = messaging.Message(
-                data={"type": "SOLVED", "postId": post_id, "status": "solved"},
-                android=messaging.AndroidConfig(priority="high", direct_boot_ok=True),
-                topic=topic,
-            )
+            delivered = False
+            for topic in topics:
+                message = messaging.Message(
+                    data={"type": "SOLVED", "postId": post_id, "status": "solved"},
+                    android=messaging.AndroidConfig(priority="high", direct_boot_ok=True),
+                    topic=topic,
+                )
 
-            response = messaging.send(message)
-            logger.info(
-                "fcm_solved_sent",
-                post_id=post_id,
-                flair=flair,
-                topic=topic,
-                notification_id=response,
-            )
-            return True
+                response = messaging.send(message)
+                logger.info(
+                    "fcm_solved_sent",
+                    post_id=post_id,
+                    flair=canonical_flair,
+                    topic=topic,
+                    notification_id=response,
+                )
+                delivered = True
+
+            return delivered
 
         except Exception as e:
             logger.error(

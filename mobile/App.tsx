@@ -1,5 +1,7 @@
 import React, { useEffect } from 'react';
 import {
+  AppState,
+  AppStateStatus,
   Alert,
   Modal,
   Platform,
@@ -209,6 +211,14 @@ function App(): JSX.Element {
   const [permissionPrompt, setPermissionPrompt] = React.useState<'notifications' | 'installedApps' | null>(null);
   const permissionResolverRef = React.useRef<((value: string) => void) | null>(null);
 
+  const syncTopicSubscriptions = React.useCallback(async (reason: string): Promise<void> => {
+    try {
+      await fcmService.subscribeToTopics();
+    } catch (error) {
+      console.warn(`Failed to sync FCM topic subscriptions (${reason})`, error);
+    }
+  }, []);
+
   const askPermissionChoice = React.useCallback(
     (promptType: 'notifications' | 'installedApps'): Promise<string> => {
       return new Promise((resolve) => {
@@ -236,7 +246,8 @@ function App(): JSX.Element {
       const notificationChoice = await getNotificationPermissionChoice();
       if (alreadyShown) {
         if (notificationChoice === 'allowed') {
-          await fcmService.requestPermission();
+          const granted = await fcmService.requestPermission();
+          await setNotificationPermissionChoice(granted ? 'allowed' : 'deferred');
         }
         return;
       }
@@ -269,7 +280,7 @@ function App(): JSX.Element {
     // Initialize FCM
     const initFCM = async () => {
       await runInitialPermissionPrompts();
-      await fcmService.subscribeToTopics();
+      await syncTopicSubscriptions('init');
       unsubscribeForegroundMessages = fcmService.setupMessageHandlers();
       await notifeeService.createChannel();
     };
@@ -287,14 +298,28 @@ function App(): JSX.Element {
       if (unsubscribeForegroundMessages) {
         unsubscribeForegroundMessages();
       }
-      fcmService.unsubscribeFromAllTopics();
     };
-  }, [askPermissionChoice]);
+  }, [askPermissionChoice, syncTopicSubscriptions]);
 
   useEffect(() => {
     // Re-subscribe to topics when notification settings change
-    fcmService.subscribeToTopics();
-  }, [settings.notifToggles]);
+    syncTopicSubscriptions('settings-change');
+  }, [settings.notifToggles, syncTopicSubscriptions]);
+
+  useEffect(() => {
+    const appStateSubscription = AppState.addEventListener(
+      'change',
+      (nextState: AppStateStatus) => {
+        if (nextState === 'active') {
+          syncTopicSubscriptions('app-active');
+        }
+      }
+    );
+
+    return () => {
+      appStateSubscription.remove();
+    };
+  }, [syncTopicSubscriptions]);
 
   return (
     <>

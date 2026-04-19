@@ -1,14 +1,24 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
+  Alert,
+  Animated,
+  Dimensions,
   Image,
+  Linking,
+  ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Clipboard from '@react-native-clipboard/clipboard';
 
 import { Post } from '../types';
+import { useAppStore } from '../store/useAppStore';
+
+const CARD_WIDTH = Dimensions.get('window').width - 32;
 
 interface PostListItemProps {
   post: Post;
@@ -42,6 +52,21 @@ const getSubtitle = (post: Post) => {
     : post.flair;
 };
 
+const getFlairBackground = (flair: string) => {
+  switch (flair) {
+    case 'Paid - No AI':
+      return '#E86D3B';
+    case 'Paid - AI OK':
+      return '#F6A13B';
+    case 'Free':
+      return '#47B56A';
+    case 'Solved':
+      return '#4A84E8';
+    default:
+      return '#7E8793';
+  }
+};
+
 export function PostListItem({
   post,
   accentColor,
@@ -50,113 +75,219 @@ export function PostListItem({
   secondaryIcon = 'bookmark-outline',
   secondaryTint = '#7F8791',
 }: PostListItemProps) {
-  const previewImage = post.imageUrls[0];
+  const { toggleTrackedPost, isTracked } = useAppStore();
+  const tracked = isTracked(post.id);
+  const appearAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(appearAnim, {
+      toValue: 1,
+      duration: 260,
+      useNativeDriver: true,
+    }).start();
+  }, [appearAnim, post.id]);
+
+  const handleOpen = async () => {
+    const redditUrl = `reddit://comments/${post.id}`;
+    try {
+      await Linking.openURL(redditUrl);
+    } catch {
+      await Linking.openURL(post.permalink);
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        message: `${post.title}\n${post.permalink}`,
+        url: post.permalink,
+      });
+    } catch {
+      // no-op
+    }
+  };
+
+  const handleCopyLink = () => {
+    Clipboard.setString(post.permalink);
+    Alert.alert('Link copied', 'Post link has been copied to clipboard.');
+  };
+
+  const handleTrackSolved = async () => {
+    toggleTrackedPost(post.id);
+  };
 
   return (
-    <TouchableOpacity style={styles.row} activeOpacity={0.9} onPress={onPress}>
-      <View style={styles.avatarShell}>
-        {previewImage ? (
-          <Image source={{ uri: previewImage }} style={styles.avatarImage} />
-        ) : (
-          <View style={[styles.avatarFallback, { backgroundColor: accentColor }]}>
-            <Text style={styles.avatarFallbackText}>
-              {post.title.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-        )}
-      </View>
+    <Animated.View
+      style={[
+        styles.card,
+        {
+          opacity: appearAnim,
+          transform: [
+            {
+              translateY: appearAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [12, 0],
+              }),
+            },
+          ],
+        },
+      ]}
+    >
+      {post.imageUrls.length > 0 ? (
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          style={styles.imageStrip}
+        >
+          {post.imageUrls.map((uri, index) => (
+            <Image
+              key={`${post.id}-${index}`}
+              source={{ uri }}
+              style={styles.cardImage}
+              resizeMode="cover"
+            />
+          ))}
+        </ScrollView>
+      ) : (
+        <View style={[styles.emptyMedia, { backgroundColor: `${accentColor}33` }]}>
+          <Icon name="image-outline" size={26} color={accentColor} />
+        </View>
+      )}
 
-      <View style={styles.textBlock}>
-        <View style={styles.titleRow}>
-          <Text numberOfLines={1} style={styles.title}>
-            {post.title}
-          </Text>
+      <TouchableOpacity style={styles.content} activeOpacity={0.9} onPress={onPress}>
+        <View style={styles.metaRow}>
+          <View style={[styles.flairChip, { backgroundColor: getFlairBackground(post.flair) }]}>
+            <Text style={styles.flairText}>{post.flair}</Text>
+          </View>
           <Text style={styles.time}>{getRelativeTime(post.createdAt)}</Text>
         </View>
 
-        <View style={styles.subtitleRow}>
-          <Text numberOfLines={2} style={styles.subtitle}>
-            {getSubtitle(post)}
-          </Text>
+        <Text style={styles.title}>{post.title}</Text>
+
+        {post.body ? (
+          <Text style={styles.bodyText}>{post.body}</Text>
+        ) : null}
+
+        <Text style={styles.subtitle}>{getSubtitle(post)}</Text>
+
+        <View style={styles.actionsRow}>
+          <TouchableOpacity onPress={handleOpen} style={styles.actionButton}>
+            <Icon name="open-in-new" size={18} color="#A6AFBB" />
+            <Text style={styles.actionLabel}>Open</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleShare} style={styles.actionButton}>
+            <Icon name="share-variant-outline" size={18} color="#A6AFBB" />
+            <Text style={styles.actionLabel}>Share</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleCopyLink} style={styles.actionButton}>
+            <Icon name="link-variant" size={18} color="#A6AFBB" />
+            <Text style={styles.actionLabel}>Copy</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleTrackSolved} style={styles.actionButton}>
+            <Icon
+              name={tracked ? 'bell-check-outline' : 'bell-outline'}
+              size={18}
+              color={tracked ? accentColor : '#A6AFBB'}
+            />
+            <Text style={[styles.actionLabel, tracked && { color: accentColor }]}>Solved</Text>
+          </TouchableOpacity>
 
           {onSecondaryPress ? (
-            <TouchableOpacity
-              onPress={onSecondaryPress}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={styles.secondaryButton}
-            >
+            <TouchableOpacity onPress={onSecondaryPress} style={styles.actionButton}>
               <Icon name={secondaryIcon} size={18} color={secondaryTint} />
             </TouchableOpacity>
           ) : null}
         </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    gap: 14,
-  },
-  avatarShell: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  card: {
+    marginHorizontal: 16,
+    borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: '#121821',
+    backgroundColor: '#12161D',
+    borderWidth: 1,
+    borderColor: '#1E242D',
   },
-  avatarImage: {
+  imageStrip: {
     width: '100%',
-    height: '100%',
   },
-  avatarFallback: {
-    flex: 1,
+  cardImage: {
+    width: CARD_WIDTH,
+    height: 220,
+    backgroundColor: '#0D1016',
+  },
+  emptyMedia: {
+    height: 160,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarFallbackText: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '700',
+  content: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  textBlock: {
-    flex: 1,
-    minWidth: 0,
-  },
-  titleRow: {
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  flairChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  flairText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   title: {
-    flex: 1,
     color: '#F5F7FB',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  bodyText: {
+    color: '#CED5DE',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 8,
   },
   time: {
     color: '#7E8793',
     fontSize: 12,
     fontWeight: '600',
   },
-  subtitleRow: {
+  subtitle: {
+    color: '#99A3B2',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    flexWrap: 'wrap',
     gap: 12,
   },
-  subtitle: {
-    flex: 1,
-    color: '#8490A1',
-    fontSize: 14,
-    lineHeight: 19,
-  },
-  secondaryButton: {
-    width: 26,
+  actionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 5,
+    paddingVertical: 4,
+  },
+  actionLabel: {
+    color: '#A6AFBB',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

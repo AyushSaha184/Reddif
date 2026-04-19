@@ -62,8 +62,13 @@ export const useAppStore = create<AppState>()(
           if (state.posts.find((p) => p.id === post.id)) {
             return state;
           }
+
+          const nextPosts = [...state.posts, post].sort(
+            (a, b) => b.createdAt - a.createdAt
+          );
+
           return {
-            posts: [post, ...state.posts],
+            posts: nextPosts,
             unreadCount: state.unreadCount + 1,
           };
         });

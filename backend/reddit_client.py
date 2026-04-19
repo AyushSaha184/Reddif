@@ -15,6 +15,46 @@ logger = structlog.get_logger(__name__)
 # Target flairs to monitor
 TARGET_FLAIRS = ["Paid - No AI", "Paid - AI OK", "Free"]
 
+
+def normalize_flair(flair: str | None) -> str:
+    """Normalize Reddit flair text so variant formatting maps consistently."""
+    if not flair:
+        return ""
+
+    normalized = flair.strip().lower()
+    # Remove Reddit emoji tokens like :no-ai: or :snoo:
+    normalized = re.sub(r":[a-z0-9_+-]+:", " ", normalized)
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
+    normalized = re.sub(r"-+", "-", normalized).strip("-")
+    return normalized
+
+
+def canonicalize_flair(flair: str | None) -> Optional[str]:
+    """Map Reddit flair variants to the canonical labels used by app + topics."""
+    normalized = normalize_flair(flair)
+    if not normalized:
+        return None
+
+    if re.match(r"^solved(?:-|$)", normalized):
+        return "Solved"
+
+    if re.match(r"^free(?:-|$)", normalized):
+        return "Free"
+
+    has_paid_token = bool(re.search(r"(?:^|-)paid(?:-|$)", normalized))
+    has_no_ai_token = bool(re.search(r"(?:^|-)no-ai(?:-|$)", normalized))
+    has_ai_ok_token = bool(re.search(r"(?:^|-)ai-ok(?:-|$)", normalized))
+    has_ai_token = bool(re.search(r"(?:^|-)ai(?:-|$)", normalized))
+    has_ok_token = bool(re.search(r"(?:^|-)ok(?:-|$)", normalized))
+
+    if has_paid_token and has_no_ai_token:
+        return "Paid - No AI"
+
+    if has_paid_token and (has_ai_ok_token or (has_ai_token and has_ok_token)):
+        return "Paid - AI OK"
+
+    return None
+
 # Budget/Price regex pattern
 BUDGET_PATTERN = re.compile(
     r"(?:\$|€|£|USD|EUR|GBP)?\s*(\d+(?:\.\d{2})?)\s*(?:\$|€|£|USD|EUR|GBP)?",
@@ -128,16 +168,23 @@ class RedditClient:
 
         return image_urls
 
-    def _parse_post(self, post_data: dict) -> Optional[ParsedSubmission]:
+    def _parse_post(
+        self, post_data: dict, include_non_target: bool = False
+    ) -> Optional[ParsedSubmission]:
         """Parse a Reddit post into our format."""
         try:
             post_id = post_data.get("id", "")
 
             # Get the link flair
-            flair = post_data.get("link_flair_text", "")
+            raw_flair = post_data.get("link_flair_text", "")
+            flair = canonicalize_flair(raw_flair)
+
+            if not flair:
+                logger.debug("unsupported_flair", post_id=post_id, flair=raw_flair)
+                return None
 
             # Only process target flairs
-            if flair not in TARGET_FLAIRS:
+            if not include_non_target and flair not in TARGET_FLAIRS:
                 return None
 
             title = post_data.get("title", "Untitled")
@@ -257,7 +304,8 @@ class RedditClient:
             data = response.json()
             if data and len(data) > 0:
                 post_data = data[0]["data"]["children"][0]["data"]
-                return self._parse_post(post_data)
+                # Include non-target flairs here so we can detect transitions like "Solved".
+                return self._parse_post(post_data, include_non_target=True)
 
             return None
 

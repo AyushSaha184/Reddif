@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, LayoutAnimation } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useAppStore } from '../store/useAppStore';
 
 interface FilterBarProps {
@@ -27,10 +27,7 @@ export function FilterBar({ flairs, selectedFlair, onSelectFlair }: FilterBarPro
                 styles.chip,
                 selectedFlair === flair && { backgroundColor: settings.accentColor + '18' },
               ]}
-              onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                onSelectFlair(flair);
-              }}
+              onPress={() => onSelectFlair(flair)}
             >
               <Text
                 style={[

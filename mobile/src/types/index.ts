@@ -26,6 +26,7 @@ export interface FCMMessage {
   postId?: string;
   flair?: string;
   title?: string;
+  body?: string;
   permalink?: string;
   imageUrls?: string;
   detectedBudget?: string;
