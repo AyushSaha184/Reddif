@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
   FlatList,
-  Image,
   Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -14,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import FastImage from 'react-native-fast-image';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { Post } from '../types';
@@ -28,67 +28,13 @@ interface PostListItemProps {
   onToggleBookmark: () => void;
 }
 
+interface CarouselImageProps {
+  uri: string;
+  postId: string;
+}
+
 const getRelativeTime = (createdAt: number) => {
   const deltaMs = Date.now() - createdAt;
-  interface CarouselImageProps {
-    uri: string;
-    postId: string;
-  }
-
-  const buildImageCandidates = (uri: string, postId: string): string[] => {
-    const candidates = new Set<string>();
-    const trimmed = uri.trim();
-    if (trimmed.length === 0) {
-      return [];
-    }
-
-    candidates.add(trimmed);
-
-    const noQuery = trimmed.split('?')[0];
-    if (noQuery) {
-      candidates.add(noQuery);
-    }
-
-    if (noQuery.includes('preview.redd.it') || noQuery.includes('external-preview.redd.it')) {
-      candidates.add(noQuery.replace('preview.redd.it', 'i.redd.it'));
-      candidates.add(noQuery.replace('external-preview.redd.it', 'i.redd.it'));
-    }
-
-    candidates.add(`https://i.redd.it/${postId}.jpg`);
-    candidates.add(`https://i.redd.it/${postId}.png`);
-
-    return Array.from(candidates).filter(value => /^https?:\/\//i.test(value));
-  };
-
-  function CarouselImage({ uri, postId }: CarouselImageProps) {
-    const [candidateIndex, setCandidateIndex] = useState(0);
-    const candidates = useMemo(() => buildImageCandidates(uri, postId), [uri, postId]);
-    const hasValidSource = candidates.length > 0;
-    const activeCandidate = hasValidSource ? candidates[Math.min(candidateIndex, candidates.length - 1)] : '';
-
-    useEffect(() => {
-      setCandidateIndex(0);
-    }, [uri, postId]);
-
-    if (!hasValidSource) {
-      return (
-        <View style={[styles.cardImage, styles.imageUnavailable]}>
-          <Icon name="image-broken-variant" size={22} color="#5E6875" />
-        </View>
-      );
-    }
-
-    return (
-      <Image
-        source={{ uri: activeCandidate }}
-        style={styles.cardImage}
-        resizeMode="contain"
-        onError={() => {
-          setCandidateIndex(prev => (prev < candidates.length - 1 ? prev + 1 : prev));
-        }}
-      />
-    );
-  }
   const minutes = Math.max(1, Math.floor(deltaMs / 60000));
 
   if (minutes < 60) {
@@ -119,6 +65,64 @@ const getFlairBackground = (flair: string) => {
   }
 };
 
+const buildImageCandidates = (uri: string, postId: string): string[] => {
+  const candidates = new Set<string>();
+  const trimmed = uri.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  candidates.add(trimmed);
+
+  const noQuery = trimmed.split('?')[0];
+  if (noQuery) {
+    candidates.add(noQuery);
+  }
+
+  if (noQuery.includes('preview.redd.it') || noQuery.includes('external-preview.redd.it')) {
+    candidates.add(noQuery.replace('preview.redd.it', 'i.redd.it'));
+    candidates.add(noQuery.replace('external-preview.redd.it', 'i.redd.it'));
+  }
+
+  candidates.add(`https://i.redd.it/${postId}.jpg`);
+  candidates.add(`https://i.redd.it/${postId}.png`);
+
+  return Array.from(candidates).filter(value => /^https?:\/\//i.test(value));
+};
+
+function CarouselImage({ uri, postId }: CarouselImageProps) {
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const candidates = useMemo(() => buildImageCandidates(uri, postId), [uri, postId]);
+  const hasValidSource = candidates.length > 0;
+  const activeCandidate = hasValidSource
+    ? candidates[Math.min(candidateIndex, candidates.length - 1)]
+    : '';
+
+  useEffect(() => {
+    setCandidateIndex(0);
+  }, [uri, postId]);
+
+  if (!hasValidSource) {
+    return (
+      <View style={[styles.cardImage, styles.imageUnavailable]}>
+        <Icon name="image-broken-variant" size={22} color="#5E6875" />
+      </View>
+    );
+  }
+
+  return (
+    <FastImage
+      source={{ uri: activeCandidate }}
+      style={styles.cardImage}
+      resizeMode={FastImage.resizeMode.contain}
+      cacheControl={FastImage.cacheControl.cacheFirst}
+      onError={() => {
+        setCandidateIndex(prev => (prev < candidates.length - 1 ? prev + 1 : prev));
+      }}
+    />
+  );
+}
+
 export function PostListItem({
   post,
   accentColor,
@@ -131,20 +135,15 @@ export function PostListItem({
   const [isBodyExpanded, setIsBodyExpanded] = useState(false);
   const [hasBodyOverflow, setHasBodyOverflow] = useState(false);
 
-  const hasImages = post.imageUrls.length > 0;
-  const hasMultipleImages = post.imageUrls.length > 1;
-  const hasBody = Boolean(post.body && post.body.trim().length > 0);
-    const normalizedImageUrls = post.imageUrls
-      .map(url => url?.replace(/&amp;/g, '&'))
-      .map(url => (url?.startsWith('//') ? `https:${url}` : url))
-      .filter((url): url is string => Boolean(url));
-
-    const hasImages = normalizedImageUrls.length > 0;
-    const hasMultipleImages = normalizedImageUrls.length > 1;
-    const hasBody = Boolean(post.body && post.body.trim().length > 0);
-    const shouldShowBodyExpand = hasBodyOverflow || (post.body?.trim().length ?? 0) > 180;
+  const normalizedImageUrls = post.imageUrls
+    .map(url => url?.replace(/&amp;/g, '&'))
     .map(url => (url?.startsWith('//') ? `https:${url}` : url))
     .filter((url): url is string => Boolean(url));
+
+  const hasImages = normalizedImageUrls.length > 0;
+  const hasMultipleImages = normalizedImageUrls.length > 1;
+  const hasBody = Boolean(post.body && post.body.trim().length > 0);
+  const shouldShowBodyExpand = hasBodyOverflow || (post.body?.trim().length ?? 0) > 180;
 
   useEffect(() => {
     Animated.timing(appearAnim, {
@@ -226,14 +225,12 @@ export function PostListItem({
           nestedScrollEnabled
           scrollEventThrottle={16}
           onMomentumScrollEnd={handleImageMomentumEnd}
-              <CarouselImage uri={item} postId={post.id} />
-          renderItem={({ item }) => (
-            <Image source={{ uri: item }} style={styles.cardImage} resizeMode="contain" />
-          )}
+          getItemLayout={(_, index) => ({ length: CARD_WIDTH, offset: CARD_WIDTH * index, index })}
+          renderItem={({ item }) => <CarouselImage uri={item} postId={post.id} />}
           style={styles.imageStrip}
         />
       ) : (
-        <View style={[styles.emptyMedia, { backgroundColor: `${accentColor}33` }]}>
+        <View style={[styles.emptyMedia, { backgroundColor: `${accentColor}33` }]}> 
           <Icon name="image-outline" size={26} color={accentColor} />
         </View>
       )}
@@ -256,7 +253,7 @@ export function PostListItem({
 
       <View style={styles.content}>
         <View style={styles.metaRow}>
-          <View style={[styles.flairChip, { backgroundColor: getFlairBackground(post.flair) }]}>
+          <View style={[styles.flairChip, { backgroundColor: getFlairBackground(post.flair) }]}> 
             <Text style={styles.flairText}>{post.flair}</Text>
           </View>
           <Text style={styles.time}>{getRelativeTime(post.createdAt)}</Text>
@@ -266,28 +263,18 @@ export function PostListItem({
 
         {hasBody ? (
           <>
-            <Text
-              style={[styles.bodyText, styles.bodyMeasure]}
-              onTextLayout={handleBodyTextLayout}
-            >
+            <Text style={[styles.bodyText, styles.bodyMeasure]} onTextLayout={handleBodyTextLayout}>
               {post.body}
             </Text>
-            <Text
-              style={styles.bodyText}
-              numberOfLines={isBodyExpanded ? undefined : 3}
-            >
-              {shouldShowBodyExpand ? (
+            <Text style={styles.bodyText} numberOfLines={isBodyExpanded ? undefined : 3}>
+              {post.body}
             </Text>
-            {hasBodyOverflow ? (
+            {shouldShowBodyExpand ? (
               <TouchableOpacity
                 onPress={() => setIsBodyExpanded(prev => !prev)}
                 style={styles.expandButton}
               >
-                <Icon
-                  name={isBodyExpanded ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color="#A6AFBB"
-                />
+                <Text style={styles.actionText}>{isBodyExpanded ? 'Less' : 'More'}</Text>
               </TouchableOpacity>
             ) : null}
           </>
@@ -329,6 +316,10 @@ const styles = StyleSheet.create({
     width: CARD_WIDTH,
     height: DEFAULT_IMAGE_HEIGHT,
     backgroundColor: '#0A0D12',
+  },
+  imageUnavailable: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyMedia: {
     height: 160,
@@ -419,10 +410,6 @@ const styles = StyleSheet.create({
   actionText: {
     color: '#A6AFBB',
     fontSize: 13,
-    imageUnavailable: {
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
     fontWeight: '600',
   },
 });

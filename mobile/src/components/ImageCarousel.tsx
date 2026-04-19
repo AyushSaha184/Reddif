@@ -1,5 +1,6 @@
-import React, {useState} from 'react';
-import {View, Image, ScrollView, StyleSheet, Dimensions} from 'react-native';
+import React, {useState, useEffect} from 'react';
+import {View, ScrollView, StyleSheet, Dimensions} from 'react-native';
+import FastImage from 'react-native-fast-image';
 
 const {width} = Dimensions.get('window');
 
@@ -11,6 +12,14 @@ interface ImageCarouselProps {
 export function ImageCarousel({images, height}: ImageCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
 
+  useEffect(() => {
+    if (images.length > 1) {
+      FastImage.preload(
+        images.slice(0, 3).map(uri => ({uri}))
+      );
+    }
+  }, [images]);
+
   if (images.length === 0) {
     return null;
   }
@@ -18,10 +27,11 @@ export function ImageCarousel({images, height}: ImageCarouselProps) {
   if (images.length === 1) {
     return (
       <View style={[styles.container, {height}]}>
-        <Image
+        <FastImage
           source={{uri: images[0]}}
           style={[styles.image, {height}]}
-          resizeMode="contain"
+          resizeMode={FastImage.resizeMode.contain}
+          cacheControl={FastImage.cacheControl.cacheFirst}
         />
       </View>
     );
@@ -38,11 +48,12 @@ export function ImageCarousel({images, height}: ImageCarouselProps) {
           setActiveIndex(index);
         }}>
         {images.map((uri, index) => (
-          <Image
+          <FastImage
             key={index}
             source={{uri}}
             style={[styles.image, {height, width}]}
-            resizeMode="contain"
+            resizeMode={FastImage.resizeMode.contain}
+            cacheControl={FastImage.cacheControl.cacheFirst}
           />
         ))}
       </ScrollView>
