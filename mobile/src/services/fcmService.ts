@@ -105,7 +105,7 @@ export const handleIncomingFCMData = async (
     addPost,
     removePost,
     updatePostFlair,
-    isTracked,
+    isBookmarked,
   } = useAppStore.getState();
 
   switch (message.type) {
@@ -156,11 +156,11 @@ export const handleIncomingFCMData = async (
         const canonicalNewFlair = canonicalizeFlairLabel(message.newFlair);
         updatePostFlair(message.postId, canonicalNewFlair);
 
-        if (isTracked(message.postId) && isFlairEnabled(canonicalNewFlair)) {
+        if (canonicalNewFlair === 'Solved' && isBookmarked(message.postId)) {
           const {posts} = useAppStore.getState();
           const post = posts.find((p) => p.id === message.postId);
           if (post) {
-            await notifeeService.showStatusUpdateNotification(post.title, canonicalNewFlair);
+            await notifeeService.showStatusUpdateNotification(post.title, 'Solved');
           }
         }
       }
@@ -169,6 +169,14 @@ export const handleIncomingFCMData = async (
     case 'SOLVED':
       if (message.postId) {
         updatePostFlair(message.postId, 'Solved');
+
+        if (isBookmarked(message.postId)) {
+          const {posts} = useAppStore.getState();
+          const post = posts.find((p) => p.id === message.postId);
+          if (post) {
+            await notifeeService.showStatusUpdateNotification(post.title, 'Solved');
+          }
+        }
       }
       break;
 

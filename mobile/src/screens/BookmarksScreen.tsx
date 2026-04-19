@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Alert,
   FlatList,
-  Linking,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -21,15 +20,6 @@ export function BookmarksScreen() {
   const { bookmarks, removeBookmark, settings } = useAppStore();
   const backgroundColor = getThemeBackground(settings.theme);
   const sortedBookmarks = [...bookmarks].sort((a, b) => b.createdAt - a.createdAt);
-
-  const openPost = async (post: Post) => {
-    const redditUrl = `reddit://comments/${post.id}`;
-    try {
-      await Linking.openURL(redditUrl);
-    } catch (error) {
-      await Linking.openURL(post.permalink);
-    }
-  };
 
   const handleRemove = (post: Post) => {
     Alert.alert(
@@ -66,10 +56,8 @@ export function BookmarksScreen() {
           <PostListItem
             post={item}
             accentColor={settings.accentColor}
-            onPress={() => openPost(item)}
-            onSecondaryPress={() => handleRemove(item)}
-            secondaryIcon="delete-outline"
-            secondaryTint="#FF6B6B"
+            isBookmarked
+            onToggleBookmark={() => handleRemove(item)}
           />
         )}
         keyExtractor={item => item.id}

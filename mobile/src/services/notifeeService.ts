@@ -13,9 +13,15 @@ class NotifeeService {
   }
 
   async showStatusUpdateNotification(title: string, newFlair: string): Promise<void> {
+    const shortTitle = title.length > 50 ? `${title.slice(0, 50)}...` : title;
+    const body =
+      newFlair === 'Solved'
+        ? `Bookmarked post is now solved: "${shortTitle}"`
+        : `"${shortTitle}" changed to ${newFlair}`;
+
     await notifee.displayNotification({
       title: 'Status Update',
-      body: `"${title.slice(0, 50)}..." changed to ${newFlair}`,
+      body,
       android: {
         channelId: 'reddit-leads',
         importance: AndroidImportance.HIGH,

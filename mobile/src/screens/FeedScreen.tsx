@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Text,
   View,
-  Linking,
 } from 'react-native';
 
 import { ConnectionBanner } from '../components/ConnectionBanner';
@@ -14,7 +13,6 @@ import { FilterBar } from '../components/FilterBar';
 import { PostListItem } from '../components/PostListItem';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useAppStore } from '../store/useAppStore';
-import { Post } from '../types';
 
 const FLAIRS = ['All', 'Paid - No AI', 'Paid - AI OK', 'Free'] as const;
 type FlairFilter = typeof FLAIRS[number];
@@ -47,15 +45,6 @@ export function FeedScreen() {
     }
     return sortedByLatest.filter(post => post.flair === selectedFlair);
   }, [posts, selectedFlair]);
-
-  const openPost = async (post: Post) => {
-    const redditUrl = `reddit://comments/${post.id}`;
-    try {
-      await Linking.openURL(redditUrl);
-    } catch (error) {
-      await Linking.openURL(post.permalink);
-    }
-  };
 
   const backgroundColor = getThemeBackground(settings.theme);
 
@@ -90,16 +79,14 @@ export function FeedScreen() {
               <PostListItem
                 post={item}
                 accentColor={settings.accentColor}
-                onPress={() => openPost(item)}
-                onSecondaryPress={() => {
+                isBookmarked={bookmarked}
+                onToggleBookmark={() => {
                   if (bookmarked) {
                     removeBookmark(item.id);
                     return;
                   }
                   addBookmark(item);
                 }}
-                secondaryIcon={bookmarked ? 'bookmark' : 'bookmark-outline'}
-                secondaryTint={bookmarked ? settings.accentColor : '#717A85'}
               />
             );
           }}

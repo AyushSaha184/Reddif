@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  Alert,
   Animated,
   Dimensions,
   Image,
@@ -13,20 +12,16 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import Clipboard from '@react-native-clipboard/clipboard';
 
 import { Post } from '../types';
-import { useAppStore } from '../store/useAppStore';
 
 const CARD_WIDTH = Dimensions.get('window').width - 32;
 
 interface PostListItemProps {
   post: Post;
   accentColor: string;
-  onPress: () => void;
-  onSecondaryPress?: () => void;
-  secondaryIcon?: string;
-  secondaryTint?: string;
+  isBookmarked: boolean;
+  onToggleBookmark: () => void;
 }
 
 const getRelativeTime = (createdAt: number) => {
@@ -70,13 +65,9 @@ const getFlairBackground = (flair: string) => {
 export function PostListItem({
   post,
   accentColor,
-  onPress,
-  onSecondaryPress,
-  secondaryIcon = 'bookmark-outline',
-  secondaryTint = '#7F8791',
+  isBookmarked,
+  onToggleBookmark,
 }: PostListItemProps) {
-  const { toggleTrackedPost, isTracked } = useAppStore();
-  const tracked = isTracked(post.id);
   const appearAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -105,15 +96,6 @@ export function PostListItem({
     } catch {
       // no-op
     }
-  };
-
-  const handleCopyLink = () => {
-    Clipboard.setString(post.permalink);
-    Alert.alert('Link copied', 'Post link has been copied to clipboard.');
-  };
-
-  const handleTrackSolved = async () => {
-    toggleTrackedPost(post.id);
   };
 
   return (
@@ -155,7 +137,7 @@ export function PostListItem({
         </View>
       )}
 
-      <TouchableOpacity style={styles.content} activeOpacity={0.9} onPress={onPress}>
+      <View style={styles.content}>
         <View style={styles.metaRow}>
           <View style={[styles.flairChip, { backgroundColor: getFlairBackground(post.flair) }]}>
             <Text style={styles.flairText}>{post.flair}</Text>
@@ -173,8 +155,8 @@ export function PostListItem({
 
         <View style={styles.actionsRow}>
           <TouchableOpacity onPress={handleOpen} style={styles.actionButton}>
-            <Icon name="open-in-new" size={18} color="#A6AFBB" />
-            <Text style={styles.actionLabel}>Open</Text>
+            <Icon name="reddit" size={18} color="#A6AFBB" />
+            <Text style={styles.actionLabel}>Reddit</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={handleShare} style={styles.actionButton}>
@@ -182,27 +164,16 @@ export function PostListItem({
             <Text style={styles.actionLabel}>Share</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={handleCopyLink} style={styles.actionButton}>
-            <Icon name="link-variant" size={18} color="#A6AFBB" />
-            <Text style={styles.actionLabel}>Copy</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={handleTrackSolved} style={styles.actionButton}>
+          <TouchableOpacity onPress={onToggleBookmark} style={styles.actionButton}>
             <Icon
-              name={tracked ? 'bell-check-outline' : 'bell-outline'}
+              name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
               size={18}
-              color={tracked ? accentColor : '#A6AFBB'}
+              color={isBookmarked ? accentColor : '#A6AFBB'}
             />
-            <Text style={[styles.actionLabel, tracked && { color: accentColor }]}>Solved</Text>
+            <Text style={[styles.actionLabel, isBookmarked && { color: accentColor }]}>Bookmark</Text>
           </TouchableOpacity>
-
-          {onSecondaryPress ? (
-            <TouchableOpacity onPress={onSecondaryPress} style={styles.actionButton}>
-              <Icon name={secondaryIcon} size={18} color={secondaryTint} />
-            </TouchableOpacity>
-          ) : null}
         </View>
-      </TouchableOpacity>
+      </View>
     </Animated.View>
   );
 }
