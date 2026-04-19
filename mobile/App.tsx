@@ -161,9 +161,11 @@ function TabNavigator() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{updateInfo?.isMandatory ? 'Update Required' : 'Update Available'}</Text>
             <Text style={styles.modalSubtitle}>v{updateInfo?.latestVersion}</Text>
-            <Text style={styles.modalNotes} numberOfLines={6}>
-              {updateInfo?.releaseNotes || 'Bug fixes and improvements'}
-            </Text>
+            {updateInfo?.releaseNotes ? (
+              <Text style={styles.modalNotes} numberOfLines={6}>
+                {updateInfo.releaseNotes}
+              </Text>
+            ) : null}
 
             <View style={styles.modalActions}>
               {!updateInfo?.isMandatory ? (

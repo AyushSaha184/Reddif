@@ -21,7 +21,7 @@ export function BookmarksScreen() {
 
   if (bookmarks.length === 0) {
     return (
-      <View style={[styles.container, { backgroundColor }]}>
+      <View style={[styles.emptyContainer, { backgroundColor }]}> 
         <Text style={styles.emptyText}>No bookmarks yet</Text>
         <Text style={styles.emptySubtext}>
           Bookmark posts to save them for later
@@ -59,6 +59,9 @@ export function BookmarksScreen() {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',

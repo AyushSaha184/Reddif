@@ -2,11 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
+  FlatList,
   Image,
   Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
-  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -20,12 +20,6 @@ import { Post } from '../types';
 
 const CARD_WIDTH = Dimensions.get('window').width - 32;
 const DEFAULT_IMAGE_HEIGHT = 220;
-const MIN_IMAGE_HEIGHT = 180;
-const MAX_IMAGE_HEIGHT = 320;
-const REDDIT_LOGO_URI = 'https://www.redditstatic.com/desktop2x/img/favicon/apple-icon-57x57.png';
-const SHARE_ICON_URI = 'https://img.icons8.com/ios/50/share.png';
-const BOOKMARK_ICON_URI = 'https://img.icons8.com/ios-filled/50/bookmark.png';
-const BOOKMARK_OUTLINE_ICON_URI = 'https://img.icons8.com/ios/50/bookmark--edge.png';
 
 interface PostListItemProps {
   post: Post;
@@ -36,6 +30,65 @@ interface PostListItemProps {
 
 const getRelativeTime = (createdAt: number) => {
   const deltaMs = Date.now() - createdAt;
+  interface CarouselImageProps {
+    uri: string;
+    postId: string;
+  }
+
+  const buildImageCandidates = (uri: string, postId: string): string[] => {
+    const candidates = new Set<string>();
+    const trimmed = uri.trim();
+    if (trimmed.length === 0) {
+      return [];
+    }
+
+    candidates.add(trimmed);
+
+    const noQuery = trimmed.split('?')[0];
+    if (noQuery) {
+      candidates.add(noQuery);
+    }
+
+    if (noQuery.includes('preview.redd.it') || noQuery.includes('external-preview.redd.it')) {
+      candidates.add(noQuery.replace('preview.redd.it', 'i.redd.it'));
+      candidates.add(noQuery.replace('external-preview.redd.it', 'i.redd.it'));
+    }
+
+    candidates.add(`https://i.redd.it/${postId}.jpg`);
+    candidates.add(`https://i.redd.it/${postId}.png`);
+
+    return Array.from(candidates).filter(value => /^https?:\/\//i.test(value));
+  };
+
+  function CarouselImage({ uri, postId }: CarouselImageProps) {
+    const [candidateIndex, setCandidateIndex] = useState(0);
+    const candidates = useMemo(() => buildImageCandidates(uri, postId), [uri, postId]);
+    const hasValidSource = candidates.length > 0;
+    const activeCandidate = hasValidSource ? candidates[Math.min(candidateIndex, candidates.length - 1)] : '';
+
+    useEffect(() => {
+      setCandidateIndex(0);
+    }, [uri, postId]);
+
+    if (!hasValidSource) {
+      return (
+        <View style={[styles.cardImage, styles.imageUnavailable]}>
+          <Icon name="image-broken-variant" size={22} color="#5E6875" />
+        </View>
+      );
+    }
+
+    return (
+      <Image
+        source={{ uri: activeCandidate }}
+        style={styles.cardImage}
+        resizeMode="contain"
+        onError={() => {
+          setCandidateIndex(prev => (prev < candidates.length - 1 ? prev + 1 : prev));
+        }}
+      />
+    );
+  }
   const minutes = Math.max(1, Math.floor(deltaMs / 60000));
 
   if (minutes < 60) {
@@ -73,19 +126,25 @@ export function PostListItem({
   onToggleBookmark,
 }: PostListItemProps) {
   const appearAnim = useRef(new Animated.Value(0)).current;
-  const imageScrollRef = useRef<ScrollView>(null);
+  const imageListRef = useRef<FlatList<string>>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isBodyExpanded, setIsBodyExpanded] = useState(false);
   const [hasBodyOverflow, setHasBodyOverflow] = useState(false);
-  const [imageHeights, setImageHeights] = useState<Record<number, number>>({});
-  const [showRedditLogoFallback, setShowRedditLogoFallback] = useState(false);
-  const [showShareIconFallback, setShowShareIconFallback] = useState(false);
-  const [showBookmarkIconFallback, setShowBookmarkIconFallback] = useState(false);
 
   const hasImages = post.imageUrls.length > 0;
   const hasMultipleImages = post.imageUrls.length > 1;
   const hasBody = Boolean(post.body && post.body.trim().length > 0);
-  const activeImageHeight = imageHeights[currentImageIndex] ?? DEFAULT_IMAGE_HEIGHT;
+    const normalizedImageUrls = post.imageUrls
+      .map(url => url?.replace(/&amp;/g, '&'))
+      .map(url => (url?.startsWith('//') ? `https:${url}` : url))
+      .filter((url): url is string => Boolean(url));
+
+    const hasImages = normalizedImageUrls.length > 0;
+    const hasMultipleImages = normalizedImageUrls.length > 1;
+    const hasBody = Boolean(post.body && post.body.trim().length > 0);
+    const shouldShowBodyExpand = hasBodyOverflow || (post.body?.trim().length ?? 0) > 180;
+    .map(url => (url?.startsWith('//') ? `https:${url}` : url))
+    .filter((url): url is string => Boolean(url));
 
   useEffect(() => {
     Animated.timing(appearAnim, {
@@ -99,11 +158,7 @@ export function PostListItem({
     setHasBodyOverflow(false);
     setIsBodyExpanded(false);
     setCurrentImageIndex(0);
-    setImageHeights({});
-    setShowRedditLogoFallback(false);
-    setShowShareIconFallback(false);
-    setShowBookmarkIconFallback(false);
-    imageScrollRef.current?.scrollTo({ x: 0, animated: false });
+    imageListRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [post.id, post.body]);
 
   const handleShare = async () => {
@@ -138,30 +193,6 @@ export function PostListItem({
     }
   };
 
-  const handleImageLoad = (
-    index: number,
-    event: NativeSyntheticEvent<{ source: { width: number; height: number } }>
-  ) => {
-    const width = event.nativeEvent.source?.width;
-    const height = event.nativeEvent.source?.height;
-    if (!width || !height) {
-      return;
-    }
-
-    const scaledHeight = (CARD_WIDTH * height) / width;
-    const boundedHeight = Math.max(MIN_IMAGE_HEIGHT, Math.min(MAX_IMAGE_HEIGHT, scaledHeight));
-
-    setImageHeights(prev => {
-      if (prev[index] === boundedHeight) {
-        return prev;
-      }
-      return {
-        ...prev,
-        [index]: boundedHeight,
-      };
-    });
-  };
-
   const handleBodyTextLayout = (event: NativeSyntheticEvent<TextLayoutEventData>) => {
     setHasBodyOverflow(event.nativeEvent.lines.length > 3);
   };
@@ -184,27 +215,23 @@ export function PostListItem({
       ]}
     >
       {hasImages ? (
-        <ScrollView
-          ref={imageScrollRef}
+        <FlatList
+          ref={imageListRef}
+          data={normalizedImageUrls}
+          keyExtractor={(uri, index) => `${post.id}-${index}-${uri}`}
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={handleImageMomentumEnd}
+          decelerationRate="fast"
           nestedScrollEnabled
           scrollEventThrottle={16}
-          decelerationRate="fast"
-          style={[styles.imageStrip, { height: activeImageHeight }]}
-        >
-          {post.imageUrls.map((uri, index) => (
-            <Image
-              key={`${post.id}-${index}`}
-              source={{ uri }}
-              onLoad={event => handleImageLoad(index, event)}
-              style={[styles.cardImage, { height: activeImageHeight }]}
-              resizeMode="contain"
-            />
-          ))}
-        </ScrollView>
+          onMomentumScrollEnd={handleImageMomentumEnd}
+              <CarouselImage uri={item} postId={post.id} />
+          renderItem={({ item }) => (
+            <Image source={{ uri: item }} style={styles.cardImage} resizeMode="contain" />
+          )}
+          style={styles.imageStrip}
+        />
       ) : (
         <View style={[styles.emptyMedia, { backgroundColor: `${accentColor}33` }]}>
           <Icon name="image-outline" size={26} color={accentColor} />
@@ -213,7 +240,7 @@ export function PostListItem({
 
       {hasMultipleImages ? (
         <View style={styles.dotsRow}>
-          {post.imageUrls.map((_, index) => (
+          {normalizedImageUrls.map((_, index) => (
             <View
               key={`${post.id}-dot-${index}`}
               style={[
@@ -240,11 +267,16 @@ export function PostListItem({
         {hasBody ? (
           <>
             <Text
-              style={styles.bodyText}
-              numberOfLines={isBodyExpanded ? undefined : 3}
+              style={[styles.bodyText, styles.bodyMeasure]}
               onTextLayout={handleBodyTextLayout}
             >
               {post.body}
+            </Text>
+            <Text
+              style={styles.bodyText}
+              numberOfLines={isBodyExpanded ? undefined : 3}
+            >
+              {shouldShowBodyExpand ? (
             </Text>
             {hasBodyOverflow ? (
               <TouchableOpacity
@@ -262,50 +294,18 @@ export function PostListItem({
         ) : null}
 
         <View style={styles.actionsRow}>
+          <TouchableOpacity onPress={onToggleBookmark} style={styles.actionButton}>
+            <Text style={[styles.actionText, { color: isBookmarked ? accentColor : '#A6AFBB' }]}> 
+              Bookmark
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity onPress={handleOpenInReddit} style={styles.actionButton}>
-            {showRedditLogoFallback ? (
-              <Icon name="open-in-new" size={19} color="#A6AFBB" />
-            ) : (
-              <Image
-                source={{ uri: REDDIT_LOGO_URI }}
-                onError={() => setShowRedditLogoFallback(true)}
-                style={styles.redditLogo}
-                resizeMode="contain"
-              />
-            )}
+            <Text style={styles.actionText}>Reddit</Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={handleShare} style={styles.actionButton}>
-            {showShareIconFallback ? (
-              <Icon name="share-variant-outline" size={19} color="#A6AFBB" />
-            ) : (
-              <Image
-                source={{ uri: SHARE_ICON_URI }}
-                onError={() => setShowShareIconFallback(true)}
-                style={[styles.actionRemoteIcon, { tintColor: '#A6AFBB' }]}
-                resizeMode="contain"
-              />
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={onToggleBookmark} style={styles.actionButton}>
-            {showBookmarkIconFallback ? (
-              <Icon
-                name={isBookmarked ? 'bookmark' : 'bookmark-outline'}
-                size={19}
-                color={isBookmarked ? accentColor : '#A6AFBB'}
-              />
-            ) : (
-              <Image
-                source={{ uri: isBookmarked ? BOOKMARK_ICON_URI : BOOKMARK_OUTLINE_ICON_URI }}
-                onError={() => setShowBookmarkIconFallback(true)}
-                style={[
-                  styles.actionRemoteIcon,
-                  { tintColor: isBookmarked ? accentColor : '#A6AFBB' },
-                ]}
-                resizeMode="contain"
-              />
-            )}
+            <Text style={styles.actionText}>Share</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
   },
   cardImage: {
     width: CARD_WIDTH,
-    height: 220,
+    height: DEFAULT_IMAGE_HEIGHT,
     backgroundColor: '#0A0D12',
   },
   emptyMedia: {
@@ -384,6 +384,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  bodyMeasure: {
+    position: 'absolute',
+    opacity: 0,
+    left: 0,
+    right: 0,
+    zIndex: -1,
+  },
   expandButton: {
     alignSelf: 'flex-start',
     marginTop: 4,
@@ -404,18 +411,18 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   actionButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    minHeight: 26,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  redditLogo: {
-    width: 19,
-    height: 19,
-  },
-  actionRemoteIcon: {
-    width: 19,
-    height: 19,
+  actionText: {
+    color: '#A6AFBB',
+    fontSize: 13,
+    imageUnavailable: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    fontWeight: '600',
   },
 });
