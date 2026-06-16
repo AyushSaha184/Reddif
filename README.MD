@@ -47,6 +47,12 @@ The backend health URL is:
 http://localhost:8000/health
 ```
 
+For deeper diagnostics, you can also open:
+
+```text
+http://localhost:8000/health/detailed
+```
+
 Important: the backend must stay running at all times(on a computer preferably), otherwise the app will stop receiving fresh post updates and notifications.
 
 ### 4. Fill the required backend details
@@ -198,6 +204,9 @@ server.bat deps
 
 - App settings keep failing:
   Make sure the `HMAC Secret` in the app exactly matches `HMAC_SECRET` in `backend/.env`.
+
+- App reaches the backend but no fresh posts arrive:
+  Open `http://localhost:8000/health/detailed` and check `reddit_fetch_ok` plus `last_reddit_error`. If Reddit polling is blocked there, the app can still reach the backend but no new posts or notifications will be generated.
 
 - App stops receiving new posts:
   The backend is not running anymore. Start it again and keep it running:

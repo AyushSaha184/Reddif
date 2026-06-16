@@ -1,10 +1,13 @@
 import axios from 'axios';
 import { Alert, Linking } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAppStore } from '../store/useAppStore';
 
 const GITHUB_REPO = 'AyushSaha184/Reddif';
 const RELEASES_PAGE_URL = `https://github.com/${GITHUB_REPO}/releases/latest`;
 const CURRENT_VERSION: string = require('../../package.json').version;
+const UPDATE_CHECK_CACHE_KEY = '@last_update_check_at';
+const UPDATE_CHECK_CACHE_MS = 12 * 60 * 60 * 1000;
 
 interface Release {
   tag_name: string;
@@ -87,8 +90,19 @@ const getLatestVersion = (release: Release): string | null => {
 /**
  * Check for app updates from GitHub
  */
-export const checkForUpdates = async (): Promise<UpdateInfo | null> => {
+const hasRecentUpdateCheck = async (): Promise<boolean> => {
+  const lastCheckedRaw = await AsyncStorage.getItem(UPDATE_CHECK_CACHE_KEY);
+  const lastCheckedAt = Number(lastCheckedRaw || 0);
+  return Boolean(lastCheckedAt && Date.now() - lastCheckedAt < UPDATE_CHECK_CACHE_MS);
+};
+
+export const checkForUpdates = async (force = false): Promise<UpdateInfo | null> => {
   try {
+    if (!force && await hasRecentUpdateCheck()) {
+      return null;
+    }
+    await AsyncStorage.setItem(UPDATE_CHECK_CACHE_KEY, Date.now().toString());
+
     const response = await axios.get(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
       {
@@ -177,6 +191,10 @@ export const downloadAndInstallUpdate = async (
 };
 
 export const refreshUpdateAvailability = async (): Promise<UpdateInfo | null> => {
+  if (await hasRecentUpdateCheck()) {
+    return null;
+  }
+
   const updateInfo = await checkForUpdates();
 
   if (!updateInfo) {

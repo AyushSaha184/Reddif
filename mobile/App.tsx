@@ -30,9 +30,7 @@ import {
   UpdateInfo,
 } from './src/services/updateService';
 import {
-  getNotificationPermissionChoice,
   hasShownInitialPermissionPrompt,
-  setNotificationPermissionChoice,
   setInitialPermissionPromptShown,
 } from './src/services/permissionPrefs';
 
@@ -63,7 +61,7 @@ function TabNavigator() {
   const [updateInfo, setUpdateInfo] = React.useState<UpdateInfo | null>(null);
 
   const openUpdateModal = async () => {
-    const info = await checkForUpdates();
+    const info = await checkForUpdates(true);
     if (!info) {
       useAppStore.getState().setHasUpdateAvailable(false);
       return;
@@ -200,8 +198,7 @@ function TabNavigator() {
 
 function App(): JSX.Element {
   const { settings, clearExpiredPosts } = useAppStore();
-  const [permissionPrompt, setPermissionPrompt] = React.useState<'notifications' | null>(null);
-  const permissionResolverRef = React.useRef<((value: string) => void) | null>(null);
+  const lastAppActiveSyncRef = React.useRef(0);
 
   const syncTopicSubscriptions = React.useCallback(async (reason: string): Promise<void> => {
     try {
@@ -211,50 +208,16 @@ function App(): JSX.Element {
     }
   }, []);
 
-  const askPermissionChoice = React.useCallback(
-    (promptType: 'notifications'): Promise<string> => {
-      return new Promise((resolve) => {
-        permissionResolverRef.current = resolve;
-        setPermissionPrompt(promptType);
-      });
-    },
-    []
-  );
-
-  const resolvePermissionChoice = React.useCallback((choice: string) => {
-    setPermissionPrompt(null);
-    const resolver = permissionResolverRef.current;
-    permissionResolverRef.current = null;
-    if (resolver) {
-      resolver(choice);
-    }
-  }, []);
-
   useEffect(() => {
     let unsubscribeForegroundMessages: (() => void) | undefined;
 
     const runInitialPermissionPrompts = async (): Promise<void> => {
       const alreadyShown = await hasShownInitialPermissionPrompt();
-      const notificationChoice = await getNotificationPermissionChoice();
       if (alreadyShown) {
-        if (notificationChoice === 'allowed') {
-          const granted = await fcmService.requestPermission();
-          await setNotificationPermissionChoice(granted ? 'allowed' : 'deferred');
-        }
         return;
       }
 
-      const notificationAction = await askPermissionChoice('notifications');
-      if (notificationAction === 'allow') {
-        const granted = await fcmService.requestPermission();
-        await setNotificationPermissionChoice(granted ? 'allowed' : 'deferred');
-      } else if (notificationAction === 'once') {
-        const granted = await fcmService.requestPermission();
-        await setNotificationPermissionChoice(granted ? 'allowed' : 'deferred');
-      } else {
-        await setNotificationPermissionChoice('deferred');
-      }
-
+      await fcmService.requestPermission();
       await setInitialPermissionPromptShown();
     };
 
@@ -275,12 +238,11 @@ function App(): JSX.Element {
     refreshUpdateAvailability();
 
     return () => {
-      permissionResolverRef.current = null;
       if (unsubscribeForegroundMessages) {
         unsubscribeForegroundMessages();
       }
     };
-  }, [askPermissionChoice, syncTopicSubscriptions]);
+  }, [syncTopicSubscriptions]);
 
   useEffect(() => {
     // Re-subscribe to topics when notification settings change
@@ -292,6 +254,11 @@ function App(): JSX.Element {
       'change',
       (nextState: AppStateStatus) => {
         if (nextState === 'active') {
+          const now = Date.now();
+          if (now - lastAppActiveSyncRef.current < 5 * 60 * 1000) {
+            return;
+          }
+          lastAppActiveSyncRef.current = now;
           syncTopicSubscriptions('app-active');
         }
       }
@@ -309,46 +276,6 @@ function App(): JSX.Element {
           <Stack.Screen name="Main" component={TabNavigator} />
         </Stack.Navigator>
       </NavigationContainer>
-
-      <Modal
-        visible={permissionPrompt !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => resolvePermissionChoice('deny')}
-      >
-        <View style={styles.permissionOverlay}>
-          <View style={styles.permissionSheet}>
-            <View style={styles.permissionIconWrap}>
-              <Icon name="bell-outline" size={20} color="#E7E7EA" />
-            </View>
-
-            <Text style={styles.permissionTitle}>
-              Allow Reddif to send notifications?
-            </Text>
-
-            <>
-              <TouchableOpacity
-                style={[styles.permissionButton, styles.permissionPrimaryButton]}
-                onPress={() => resolvePermissionChoice('allow')}
-              >
-                <Text style={styles.permissionPrimaryText}>Allow only while using the app</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.permissionButton, styles.permissionSecondaryButton]}
-                onPress={() => resolvePermissionChoice('deny')}
-              >
-                <Text style={styles.permissionSecondaryText}>Deny</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.permissionButton, styles.permissionSecondaryButton]}
-                onPress={() => resolvePermissionChoice('once')}
-              >
-                <Text style={styles.permissionSecondaryText}>Only this time</Text>
-              </TouchableOpacity>
-            </>
-          </View>
-        </View>
-      </Modal>
     </>
   );
 }
@@ -374,67 +301,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     includeFontPadding: false,
     textAlignVertical: 'center',
-  },
-  permissionOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.68)',
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  permissionSheet: {
-    backgroundColor: '#232427',
-    borderRadius: 32,
-    borderWidth: 1,
-    borderColor: '#2E3036',
-    paddingHorizontal: 12,
-    paddingTop: 16,
-    paddingBottom: 12,
-    alignItems: 'center',
-  },
-  permissionIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#3A3C42',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  permissionTitle: {
-    color: '#F2F2F5',
-    fontSize: 22,
-    textAlign: 'center',
-    fontWeight: '600',
-    lineHeight: 30,
-    marginBottom: 14,
-  },
-  permissionButton: {
-    width: '100%',
-    minHeight: 62,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-    paddingHorizontal: 14,
-  },
-  permissionPrimaryButton: {
-    backgroundColor: '#4A86FF',
-  },
-  permissionSecondaryButton: {
-    backgroundColor: '#4A4B4F',
-  },
-  permissionPrimaryText: {
-    color: '#EAF1FF',
-    fontSize: 17,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  permissionSecondaryText: {
-    color: '#F0F0F1',
-    fontSize: 17,
-    fontWeight: '500',
-    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,

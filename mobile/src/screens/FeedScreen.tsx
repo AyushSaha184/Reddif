@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
+  Platform,
   SafeAreaView,
   StatusBar,
   StyleSheet,
@@ -39,12 +40,30 @@ export function FeedScreen() {
   }, [clearExpiredPosts, clearUnread]);
 
   const filteredPosts = useMemo(() => {
-    const sortedByLatest = [...posts].sort((a, b) => b.createdAt - a.createdAt);
     if (selectedFlair === 'All') {
-      return sortedByLatest;
+      return posts;
     }
-    return sortedByLatest.filter(post => post.flair === selectedFlair);
+    return posts.filter(post => post.flair === selectedFlair);
   }, [posts, selectedFlair]);
+
+  const renderPost = useCallback(({ item }: { item: typeof posts[number] }) => {
+    const bookmarked = isBookmarked(item.id);
+
+    return (
+      <PostListItem
+        post={item}
+        accentColor={settings.accentColor}
+        isBookmarked={bookmarked}
+        onToggleBookmark={() => {
+          if (bookmarked) {
+            removeBookmark(item.id);
+            return;
+          }
+          addBookmark(item);
+        }}
+      />
+    );
+  }, [addBookmark, isBookmarked, removeBookmark, settings.accentColor]);
 
   const backgroundColor = getThemeBackground(settings.theme);
 
@@ -67,29 +86,13 @@ export function FeedScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           decelerationRate="fast"
-          scrollEventThrottle={16}
+          scrollEventThrottle={32}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
-          removeClippedSubviews={false}
-          maxToRenderPerBatch={8}
-          windowSize={7}
-          renderItem={({ item }) => {
-            const bookmarked = isBookmarked(item.id);
-
-            return (
-              <PostListItem
-                post={item}
-                accentColor={settings.accentColor}
-                isBookmarked={bookmarked}
-                onToggleBookmark={() => {
-                  if (bookmarked) {
-                    removeBookmark(item.id);
-                    return;
-                  }
-                  addBookmark(item);
-                }}
-              />
-            );
-          }}
+          removeClippedSubviews={Platform.OS === 'android'}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          initialNumToRender={6}
+          renderItem={renderPost}
         />
       ) : (
         <View style={styles.emptyContainer}>

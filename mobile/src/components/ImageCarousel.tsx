@@ -15,7 +15,7 @@ export function ImageCarousel({images, height}: ImageCarouselProps) {
   useEffect(() => {
     if (images.length > 1) {
       FastImage.preload(
-        images.slice(0, 3).map(uri => ({uri}))
+        images.slice(0, 1).map(uri => ({uri}))
       );
     }
   }, [images]);

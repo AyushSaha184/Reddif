@@ -103,6 +103,13 @@ CONFIG = {
     "host": os.getenv("HOST", "0.0.0.0"),
     "port": int(os.getenv("PORT", "8000")),
     "poll_interval": int(os.getenv("POLL_INTERVAL", "30")),
+    "reddit_client_id": os.getenv("REDDIT_CLIENT_ID"),
+    "reddit_client_secret": os.getenv("REDDIT_CLIENT_SECRET"),
+    "reddit_username": os.getenv("REDDIT_USERNAME"),
+    "reddit_password": os.getenv("REDDIT_PASSWORD"),
+    "reddit_user_agent": os.getenv("REDDIT_USER_AGENT"),
+    "pushshift_mirrors": os.getenv("PUSHSHIFT_MIRRORS", ""),
+    "poll_jitter_seconds": int(os.getenv("POLL_JITTER_SECONDS", "5")),
 }
 
 # Start time for uptime calculation
@@ -124,18 +131,30 @@ if not firebase_creds_path.exists():
 else:
     fcm_service = FCMService(str(firebase_creds_path))
 
-# Initialize Reddit client (no API key needed!)
+# Initialize Reddit client. OAuth is used when Reddit app credentials are set.
 reddit_client = RedditClient(
     subreddit=CONFIG["subreddit_name"],
     on_new_post=lambda parsed: handle_new_submission(
         parsed, state_manager, fcm_service
     ),
     poll_interval=CONFIG["poll_interval"],
+    client_id=CONFIG["reddit_client_id"],
+    client_secret=CONFIG["reddit_client_secret"],
+    username=CONFIG["reddit_username"],
+    password=CONFIG["reddit_password"],
+    user_agent=CONFIG["reddit_user_agent"],
+    pushshift_mirrors=CONFIG["pushshift_mirrors"],
+    poll_jitter_seconds=CONFIG["poll_jitter_seconds"],
 )
 logger.info(
     "reddit_client_initialized",
     subreddit=CONFIG["subreddit_name"],
     poll_interval=CONFIG["poll_interval"],
+    poll_jitter_seconds=CONFIG["poll_jitter_seconds"],
+    reddit_oauth_configured=bool(
+        CONFIG["reddit_client_id"] and CONFIG["reddit_client_secret"]
+    ),
+    pushshift_mirrors_configured=bool(CONFIG["pushshift_mirrors"]),
 )
 
 # Initialize scheduler jobs (only if both reddit and fcm are available)
@@ -176,6 +195,20 @@ def handle_new_submission(
         detected_budget=parsed.detected_budget,
         status="open",
         created_at=parsed.created_at,
+        body=parsed.selftext,
+        author=parsed.author,
+        subreddit=parsed.subreddit,
+        score=parsed.score,
+        upvote_ratio=parsed.upvote_ratio,
+        num_comments=parsed.num_comments,
+        external_url=parsed.external_url,
+        thumbnail=parsed.thumbnail,
+        media=parsed.media,
+        stickied=parsed.stickied,
+        over_18=parsed.over_18,
+        spoiler=parsed.spoiler,
+        source=parsed.source,
+        raw_metadata=parsed.raw_metadata,
     )
 
     if not state.insert_post(post):
@@ -191,12 +224,31 @@ def handle_new_submission(
         image_urls=parsed.image_urls,
         detected_budget=parsed.detected_budget,
         created_at=parsed.created_at,
+        metadata={
+            "author": parsed.author,
+            "subreddit": parsed.subreddit,
+            "score": parsed.score,
+            "upvoteRatio": parsed.upvote_ratio,
+            "numComments": parsed.num_comments,
+            "externalUrl": parsed.external_url,
+            "thumbnail": parsed.thumbnail,
+            "media": parsed.media,
+            "stickied": parsed.stickied,
+            "over18": parsed.over_18,
+            "spoiler": parsed.spoiler,
+            "source": parsed.source,
+        },
     )
 
     if success:
-        logger.info(f"Processed and notified for post {parsed.post_id}")
+        logger.info(
+            "notification_event_processed",
+            post_id=parsed.post_id,
+            source=parsed.source,
+            flair=parsed.flair,
+        )
     else:
-        logger.error(f"Failed to send FCM notification for {parsed.post_id}")
+        logger.error("notification_event_failed", post_id=parsed.post_id)
 
 
 # FastAPI app with lifespan
@@ -282,9 +334,17 @@ async def favicon() -> Response:
 async def health_check(request: Request):
     """Health check endpoint - basic status without sensitive internals."""
     logger.info("health_check_called", method=request.method, path=request.url.path)
+    reddit_status = (
+        reddit_client.get_runtime_status() if reddit_client else {"reddit_fetch_ok": False}
+    )
     return {
         "status": "healthy",
         "timestamp": time.time(),
+        "backend_reachable": True,
+        "fcm_initialized": fcm_service is not None,
+        "reddit_fetch_ok": reddit_status.get("reddit_fetch_ok", False),
+        "last_reddit_error": reddit_status.get("last_error"),
+        "current_active_source": reddit_status.get("current_active_source"),
     }
 
 
@@ -297,14 +357,23 @@ async def detailed_health_check(request: Request):
     )
     uptime = time.time() - START_TIME
     stats = state_manager.get_stats()
+    reddit_status = (
+        reddit_client.get_runtime_status() if reddit_client else {"reddit_fetch_ok": False}
+    )
 
     return {
         "status": "healthy",
+        "backend_reachable": True,
         "uptime_seconds": int(uptime),
         "uptime_human": f"{int(uptime // 3600)}h {int((uptime % 3600) // 60)}m {int(uptime % 60)}s",
         "database": stats,
         "reddit_stream_active": reddit_client is not None,
         "fcm_initialized": fcm_service is not None,
+        "reddit_fetch_ok": reddit_status.get("reddit_fetch_ok", False),
+        "last_reddit_error": reddit_status.get("last_error"),
+        "current_active_source": reddit_status.get("current_active_source"),
+        "source_priority": reddit_status.get("source_priority"),
+        "reddit_status": reddit_status,
     }
 
 
@@ -346,6 +415,20 @@ async def get_post(request: Request, post_id: str):
         "detected_budget": post.detected_budget,
         "status": post.status,
         "created_at": post.created_at,
+        "body": post.body,
+        "author": post.author,
+        "subreddit": post.subreddit,
+        "score": post.score,
+        "upvote_ratio": post.upvote_ratio,
+        "num_comments": post.num_comments,
+        "external_url": post.external_url,
+        "thumbnail": post.thumbnail,
+        "media": post.media or {},
+        "stickied": post.stickied,
+        "over_18": post.over_18,
+        "spoiler": post.spoiler,
+        "source": post.source,
+        "raw_metadata": post.raw_metadata or {},
     }
 
 

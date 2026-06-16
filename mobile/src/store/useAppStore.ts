@@ -37,6 +37,15 @@ interface AppState {
 }
 
 const EXPIRY_DURATION = 48 * 60 * 60 * 1000; // 48 hours in milliseconds
+const MAX_RETAINED_POSTS = 250;
+
+const prunePosts = (posts: Post[]): Post[] => {
+  const now = Date.now();
+  return posts
+    .filter((post) => now - post.createdAt < EXPIRY_DURATION)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, MAX_RETAINED_POSTS);
+};
 
 export const useAppStore = create<AppState>()(
   persist(
@@ -63,9 +72,7 @@ export const useAppStore = create<AppState>()(
             return state;
           }
 
-          const nextPosts = [...state.posts, post].sort(
-            (a, b) => b.createdAt - a.createdAt
-          );
+          const nextPosts = prunePosts([...state.posts, post]);
 
           return {
             posts: nextPosts,
@@ -92,11 +99,8 @@ export const useAppStore = create<AppState>()(
       },
 
       clearExpiredPosts: () => {
-        const now = Date.now();
         set((state) => ({
-          posts: state.posts.filter(
-            (p) => now - p.createdAt < EXPIRY_DURATION
-          ),
+          posts: prunePosts(state.posts),
         }));
       },
 
@@ -156,6 +160,13 @@ export const useAppStore = create<AppState>()(
     {
       name: 'reddit-leads-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        posts: prunePosts(state.posts),
+        bookmarks: state.bookmarks,
+        trackedPosts: state.trackedPosts,
+        settings: state.settings,
+        hasUpdateAvailable: state.hasUpdateAvailable,
+      }),
     }
   )
 );

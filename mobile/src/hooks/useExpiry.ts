@@ -7,6 +7,25 @@ interface TimeRemaining {
 }
 
 const EXPIRY_DURATION = 48 * 60 * 60 * 1000; // 48 hours in milliseconds
+const subscribers = new Set<() => void>();
+let minuteInterval: ReturnType<typeof setInterval> | null = null;
+
+function subscribeMinuteTick(callback: () => void): () => void {
+  subscribers.add(callback);
+  if (!minuteInterval) {
+    minuteInterval = setInterval(() => {
+      subscribers.forEach(subscriber => subscriber());
+    }, 60000);
+  }
+
+  return () => {
+    subscribers.delete(callback);
+    if (subscribers.size === 0 && minuteInterval) {
+      clearInterval(minuteInterval);
+      minuteInterval = null;
+    }
+  };
+}
 
 export function useExpiry(createdAt: number): TimeRemaining {
   const [timeRemaining, setTimeRemaining] = useState<TimeRemaining>(() =>
@@ -14,11 +33,9 @@ export function useExpiry(createdAt: number): TimeRemaining {
   );
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    return subscribeMinuteTick(() => {
       setTimeRemaining(calculateTimeRemaining(createdAt));
-    }, 60000); // Update every minute
-
-    return () => clearInterval(interval);
+    });
   }, [createdAt]);
 
   return timeRemaining;

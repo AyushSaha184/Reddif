@@ -11,16 +11,22 @@ const logger = {
 
 const API_URL_KEY = '@backend_url';
 const DEFAULT_LOCAL_URL = 'http://localhost:8000';
+let cachedBackendUrl: string | null = null;
 
 /**
  * Get backend URL from storage
  * Falls back to default for development
  */
 export const getBackendUrl = async (): Promise<string> => {
+  if (cachedBackendUrl) {
+    return cachedBackendUrl;
+  }
+
   try {
     const storedUrl = await AsyncStorage.getItem(API_URL_KEY);
     if (storedUrl && storedUrl.length > 0) {
       logger.info('using_stored_backend_url', {url: storedUrl.substring(0, 20) + '...'});
+      cachedBackendUrl = storedUrl;
       return storedUrl;
     }
   } catch (error) {
@@ -28,6 +34,7 @@ export const getBackendUrl = async (): Promise<string> => {
   }
   
   // Fallback for development
+  cachedBackendUrl = DEFAULT_LOCAL_URL;
   return DEFAULT_LOCAL_URL;
 };
 
@@ -43,6 +50,7 @@ export const setBackendUrl = async (url: string): Promise<void> => {
     }
     
     await AsyncStorage.setItem(API_URL_KEY, validUrl);
+    cachedBackendUrl = validUrl;
     logger.info('backend_url_saved', {url: validUrl.substring(0, 20) + '...'});
   } catch (error) {
     logger.error('failed_to_save_url', {error: String(error)});

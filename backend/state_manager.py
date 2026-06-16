@@ -23,6 +23,20 @@ class Post:
     detected_budget: str | None
     status: str
     created_at: int
+    body: str = ""
+    author: str = ""
+    subreddit: str = ""
+    score: int | None = None
+    upvote_ratio: float | None = None
+    num_comments: int | None = None
+    external_url: str = ""
+    thumbnail: str = ""
+    media: dict[str, Any] | None = None
+    stickied: bool = False
+    over_18: bool = False
+    spoiler: bool = False
+    source: str = ""
+    raw_metadata: dict[str, Any] | None = None
 
 
 class StateManager:
@@ -51,6 +65,7 @@ class StateManager:
                     created_at INTEGER NOT NULL
                 )
             """)
+            self._ensure_columns(conn)
 
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_status ON posts(status)
@@ -64,6 +79,31 @@ class StateManager:
 
             conn.commit()
             logger.info("Database initialized with WAL mode")
+
+    def _ensure_columns(self, conn: sqlite3.Connection) -> None:
+        """Add optional metadata columns to existing deployments."""
+        cursor = conn.execute("PRAGMA table_info(posts)")
+        existing_columns = {row["name"] for row in cursor.fetchall()}
+        desired_columns = {
+            "body": "TEXT DEFAULT ''",
+            "author": "TEXT DEFAULT ''",
+            "subreddit": "TEXT DEFAULT ''",
+            "score": "INTEGER",
+            "upvote_ratio": "REAL",
+            "num_comments": "INTEGER",
+            "external_url": "TEXT DEFAULT ''",
+            "thumbnail": "TEXT DEFAULT ''",
+            "media": "TEXT",
+            "stickied": "INTEGER DEFAULT 0",
+            "over_18": "INTEGER DEFAULT 0",
+            "spoiler": "INTEGER DEFAULT 0",
+            "source": "TEXT DEFAULT ''",
+            "raw_metadata": "TEXT",
+        }
+
+        for column, column_type in desired_columns.items():
+            if column not in existing_columns:
+                conn.execute(f"ALTER TABLE posts ADD COLUMN {column} {column_type}")
 
     @contextmanager
     def _get_connection(self):
@@ -99,8 +139,10 @@ class StateManager:
                 conn.execute(
                     """
                     INSERT INTO posts 
-                    (post_id, flair, title, permalink, image_urls, detected_budget, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (post_id, flair, title, permalink, image_urls, detected_budget, status, created_at,
+                     body, author, subreddit, score, upvote_ratio, num_comments, external_url, thumbnail,
+                     media, stickied, over_18, spoiler, source, raw_metadata)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         post.post_id,
@@ -111,6 +153,20 @@ class StateManager:
                         post.detected_budget,
                         post.status,
                         post.created_at,
+                        post.body,
+                        post.author,
+                        post.subreddit,
+                        post.score,
+                        post.upvote_ratio,
+                        post.num_comments,
+                        post.external_url,
+                        post.thumbnail,
+                        json.dumps(post.media or {}),
+                        1 if post.stickied else 0,
+                        1 if post.over_18 else 0,
+                        1 if post.spoiler else 0,
+                        post.source,
+                        json.dumps(post.raw_metadata or {}),
                     ),
                 )
                 conn.commit()
@@ -213,4 +269,20 @@ class StateManager:
             detected_budget=row["detected_budget"],
             status=row["status"],
             created_at=row["created_at"],
+            body=row["body"] if "body" in row.keys() else "",
+            author=row["author"] if "author" in row.keys() else "",
+            subreddit=row["subreddit"] if "subreddit" in row.keys() else "",
+            score=row["score"] if "score" in row.keys() else None,
+            upvote_ratio=row["upvote_ratio"] if "upvote_ratio" in row.keys() else None,
+            num_comments=row["num_comments"] if "num_comments" in row.keys() else None,
+            external_url=row["external_url"] if "external_url" in row.keys() else "",
+            thumbnail=row["thumbnail"] if "thumbnail" in row.keys() else "",
+            media=json.loads(row["media"]) if "media" in row.keys() and row["media"] else {},
+            stickied=bool(row["stickied"]) if "stickied" in row.keys() else False,
+            over_18=bool(row["over_18"]) if "over_18" in row.keys() else False,
+            spoiler=bool(row["spoiler"]) if "spoiler" in row.keys() else False,
+            source=row["source"] if "source" in row.keys() else "",
+            raw_metadata=json.loads(row["raw_metadata"])
+            if "raw_metadata" in row.keys() and row["raw_metadata"]
+            else {},
         )

@@ -289,6 +289,12 @@ export function SettingsScreen() {
           />
         </View>
 
+        <Text style={styles.helperText}>
+          Use your computer&apos;s LAN IP, like `http://192.168.1.100:8000`, not `localhost`.
+          The HMAC secret must exactly match the backend `.env`. If Reddit polling is blocked
+          on the backend, the app can still reach `/health` but no fresh posts will arrive.
+        </Text>
+
         <TouchableOpacity
           style={styles.systemButton}
           onPress={() => Linking.openSettings()}
@@ -512,6 +518,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: 24,
     marginBottom: 8,
+  },
+  helperText: {
+    color: '#8F97A3',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 10,
+    marginBottom: 4,
   },
   card: {
     backgroundColor: '#14171B',

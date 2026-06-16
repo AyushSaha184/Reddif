@@ -126,6 +126,7 @@ class FCMService:
         image_urls: list[str],
         detected_budget: str | None,
         created_at: int,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Send notification for new post with notification + data payload."""
         canonical_flair = canonicalize_flair(flair) or flair
@@ -154,6 +155,7 @@ class FCMService:
                 "detectedBudget": detected_budget or "",
                 "createdAt": str(created_at),
             }
+            data_payload.update(self._compact_metadata(metadata or {}))
 
             delivered = False
 
@@ -189,6 +191,30 @@ class FCMService:
                 "fcm_notification_failed", post_id=post_id, flair=flair, error=str(e)
             )
             return False
+
+    def _compact_metadata(self, metadata: dict[str, Any]) -> dict[str, str]:
+        """Add optional rich metadata while keeping the FCM payload bounded."""
+        compact: dict[str, str] = {}
+        for key, value in metadata.items():
+            if value in (None, "", {}, []):
+                continue
+            if isinstance(value, (dict, list)):
+                encoded = json.dumps(value, separators=(",", ":"))
+            elif isinstance(value, bool):
+                encoded = "true" if value else "false"
+            else:
+                encoded = str(value)
+            compact[key] = encoded[:MAX_BODY_CHARS]
+
+        encoded_size = len(json.dumps(compact))
+        if encoded_size > 3500:
+            logger.warning("fcm_metadata_truncated", encoded_size=encoded_size)
+            return {
+                key: value
+                for key, value in compact.items()
+                if key not in {"media"}
+            }
+        return compact
 
     def send_flair_update(
         self, post_id: str, new_flair: str, old_flair: str | None = None

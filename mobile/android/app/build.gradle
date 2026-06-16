@@ -140,7 +140,7 @@ afterEvaluate {
         
         def copyTask = task("copy${variant.name.capitalize()}Apk") {
             doLast {
-                def outputDir = new File("C:/Apk-release")
+                def outputDir = new File("${projectDir}/../../release-apks")
                 if (!outputDir.exists()) {
                     outputDir.mkdirs()
                 }

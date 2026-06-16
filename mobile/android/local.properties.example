@@ -1,0 +1,3 @@
+## Copy to local.properties if Android Studio does not create it automatically.
+# Update the path for your machine.
+sdk.dir=C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Android\\Sdk

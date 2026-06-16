@@ -84,9 +84,6 @@ const buildImageCandidates = (uri: string, postId: string): string[] => {
     candidates.add(noQuery.replace('external-preview.redd.it', 'i.redd.it'));
   }
 
-  candidates.add(`https://i.redd.it/${postId}.jpg`);
-  candidates.add(`https://i.redd.it/${postId}.png`);
-
   return Array.from(candidates).filter(value => /^https?:\/\//i.test(value));
 };
 
@@ -135,10 +132,13 @@ export function PostListItem({
   const [isBodyExpanded, setIsBodyExpanded] = useState(false);
   const [hasBodyOverflow, setHasBodyOverflow] = useState(false);
 
-  const normalizedImageUrls = post.imageUrls
-    .map(url => url?.replace(/&amp;/g, '&'))
-    .map(url => (url?.startsWith('//') ? `https:${url}` : url))
-    .filter((url): url is string => Boolean(url));
+  const normalizedImageUrls = useMemo(
+    () => post.imageUrls
+      .map(url => url?.replace(/&amp;/g, '&'))
+      .map(url => (url?.startsWith('//') ? `https:${url}` : url))
+      .filter((url): url is string => Boolean(url)),
+    [post.imageUrls]
+  );
 
   const hasImages = normalizedImageUrls.length > 0;
   const hasMultipleImages = normalizedImageUrls.length > 1;
@@ -223,7 +223,7 @@ export function PostListItem({
           showsHorizontalScrollIndicator={false}
           decelerationRate="fast"
           nestedScrollEnabled
-          scrollEventThrottle={16}
+          scrollEventThrottle={32}
           onMomentumScrollEnd={handleImageMomentumEnd}
           getItemLayout={(_, index) => ({ length: CARD_WIDTH, offset: CARD_WIDTH * index, index })}
           renderItem={({ item }) => <CarouselImage uri={item} postId={post.id} />}

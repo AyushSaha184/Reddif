@@ -186,14 +186,18 @@ export const handleIncomingFCMData = async (
 };
 
 class FCMService {
+  private lastTopicSyncKey: string | null = null;
+  private hasRegisteredForRemoteMessages = false;
+
   private async hasNotificationPermission(): Promise<boolean> {
-    if (Platform.OS === 'android' && Platform.Version >= 33) {
-      const granted = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
-      );
-      if (!granted) {
-        return false;
+    if (Platform.OS === 'android') {
+      if (Platform.Version >= 33) {
+        return PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+        );
       }
+
+      return true;
     }
 
     const authStatus = await messaging().hasPermission();
@@ -204,35 +208,51 @@ class FCMService {
   }
 
   async requestPermission(): Promise<boolean> {
-    // Android 13+ requires explicit POST_NOTIFICATIONS runtime permission.
-    if (Platform.OS === 'android' && Platform.Version >= 33) {
-      const result = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
-      );
-      if (result !== PermissionsAndroid.RESULTS.GRANTED) {
-        return false;
+    if (Platform.OS === 'android') {
+      // Android 13+ uses the platform notification runtime permission.
+      // Avoid calling Firebase's permission API too, or the user can see a
+      // second system prompt on fresh install.
+      if (Platform.Version >= 33) {
+        const result = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+        );
+        return result === PermissionsAndroid.RESULTS.GRANTED;
       }
+
+      return true;
     }
 
     const authStatus = await messaging().requestPermission();
-    const enabled =
+    return (
       authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-
-    return enabled;
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL
+    );
   }
 
   async subscribeToTopics(): Promise<void> {
     const {settings} = useAppStore.getState();
 
     const hasPermission = await this.hasNotificationPermission();
+    const syncKey = JSON.stringify({
+      hasPermission,
+      toggles: settings.notifToggles,
+    });
+
+    if (syncKey === this.lastTopicSyncKey) {
+      return;
+    }
+
     if (!hasPermission) {
       await this.unsubscribeFromAllTopics();
+      this.lastTopicSyncKey = syncKey;
       return;
     }
 
     // Ensure device is registered and token exists before topic operations.
-    await messaging().registerDeviceForRemoteMessages();
+    if (!this.hasRegisteredForRemoteMessages) {
+      await messaging().registerDeviceForRemoteMessages();
+      this.hasRegisteredForRemoteMessages = true;
+    }
     const token = await messaging().getToken();
     if (!token) {
       console.warn('FCM token unavailable; skipping topic subscription sync');
@@ -257,6 +277,8 @@ class FCMService {
     for (const legacyTopic of LEGACY_TOPICS) {
       await messaging().unsubscribeFromTopic(legacyTopic);
     }
+
+    this.lastTopicSyncKey = syncKey;
   }
 
   async unsubscribeFromAllTopics(): Promise<void> {
@@ -267,6 +289,8 @@ class FCMService {
     for (const legacyTopic of LEGACY_TOPICS) {
       await messaging().unsubscribeFromTopic(legacyTopic);
     }
+
+    this.lastTopicSyncKey = null;
   }
 
   setupMessageHandlers(): () => void {
