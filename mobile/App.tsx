@@ -23,6 +23,7 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { useAppStore } from './src/store/useAppStore';
 import { fcmService } from './src/services/fcmService';
 import { notifeeService } from './src/services/notifeeService';
+import { pollingService } from './src/services/pollingService';
 import {
   checkForUpdates,
   openReleasesPage,
@@ -231,6 +232,9 @@ function App(): JSX.Element {
 
     initFCM();
 
+    // Start RSS polling as fallback for FCM
+    pollingService.startPolling();
+
     // Clear expired posts on startup
     clearExpiredPosts();
 
@@ -241,6 +245,7 @@ function App(): JSX.Element {
       if (unsubscribeForegroundMessages) {
         unsubscribeForegroundMessages();
       }
+      pollingService.stopPolling();
     };
   }, [syncTopicSubscriptions]);
 

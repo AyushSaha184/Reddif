@@ -61,8 +61,9 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-# Load environment variables
+# Load environment variables (backend .env, then fallback to root .env)
 load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env", override=False)
 
 
 def resolve_subreddit(value: str | None) -> str:
@@ -375,6 +376,31 @@ async def detailed_health_check(request: Request):
         "source_priority": reddit_status.get("source_priority"),
         "reddit_status": reddit_status,
     }
+
+
+@app.get("/posts")
+@limiter.limit("30/minute")
+async def get_posts(request: Request):
+    """Get all active posts (RSS feed for app polling)."""
+    posts = state_manager.get_active_posts()
+    return [
+        {
+            "post_id": post.post_id,
+            "flair": post.flair,
+            "title": post.title,
+            "permalink": post.permalink,
+            "image_urls": post.image_urls,
+            "detected_budget": post.detected_budget,
+            "status": post.status,
+            "created_at": post.created_at,
+            "body": post.body,
+            "author": post.author,
+            "subreddit": post.subreddit,
+            "score": post.score,
+            "num_comments": post.num_comments,
+        }
+        for post in posts
+    ]
 
 
 @app.get("/post/{post_id}")

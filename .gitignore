@@ -10,6 +10,7 @@ backend/firebase-service-account.json
 
 # Mobile
 mobile/node_modules/
+mobile/release-apks/
 mobile/android/app/build/
 mobile/android/.gradle/
 mobile/android/gradle-home/
