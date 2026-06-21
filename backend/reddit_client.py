@@ -37,7 +37,7 @@ BUDGET_PATTERN = re.compile(
 REDDIT_OAUTH_URL = "https://oauth.reddit.com/r/{subreddit}/new.json"
 REDDIT_OAUTH_COMMENTS_URL = "https://oauth.reddit.com/r/{subreddit}/comments/{post_id}.json"
 REDDIT_TOKEN_URL = "https://www.reddit.com/api/v1/access_token"
-REDDIT_RSS_URL = "https://www.reddit.com/r/{subreddit}/.rss"
+REDDIT_RSS_URL = "https://www.reddit.com/r/{subreddit}/new/.rss"
 OLD_REDDIT_URL = "https://old.reddit.com/r/{subreddit}/new/"
 OLD_REDDIT_COMMENTS_URL = "https://old.reddit.com/r/{subreddit}/comments/{post_id}/"
 
@@ -471,7 +471,7 @@ class OAuthRedditSource(BaseSource):
 
 class RssRedditSource(BaseSource):
     name = "rss"
-    priority = 2
+    priority = 3
 
     def fetch_new_posts(self, include_non_target: bool = False) -> list[ParsedSubmission]:
         if feedparser is None:
@@ -565,7 +565,7 @@ class RssRedditSource(BaseSource):
 
 class PushshiftRedditSource(BaseSource):
     name = "pushshift"
-    priority = 3
+    priority = 4
 
     def __init__(self, subreddit: str, session: requests.Session, mirror_urls: Iterable[str]):
         super().__init__(subreddit, session)
@@ -649,7 +649,7 @@ class PushshiftRedditSource(BaseSource):
 
 class OldRedditHtmlSource(BaseSource):
     name = "old_reddit"
-    priority = 4
+    priority = 2
 
     def fetch_new_posts(self, include_non_target: bool = False) -> list[ParsedSubmission]:
         if BeautifulSoup is None:
@@ -815,9 +815,9 @@ class RedditClient:
                 username or "",
                 password or "",
             ),
+            OldRedditHtmlSource(subreddit, self.session),
             RssRedditSource(subreddit, self.session),
             PushshiftRedditSource(subreddit, self.session, mirrors),
-            OldRedditHtmlSource(subreddit, self.session),
         ]
         self._source_health = {
             source.name: SourceHealth(source.name, source.priority, source.enabled)
@@ -935,11 +935,13 @@ class RedditClient:
 
     def fetch_new_posts(self) -> list[ParsedSubmission]:
         """Fetch new posts using automatic priority failover."""
-        for source in self._ordered_sources():
+        ordered = self._ordered_sources()
+        for index, source in enumerate(ordered):
             if not source.enabled:
                 self._source_health[source.name].enabled = False
                 continue
 
+            has_more_sources = index < len(ordered) - 1
             start = time.monotonic()
             logger.info("reddit_source_selected", source=source.name, priority=source.priority)
             try:
@@ -952,7 +954,14 @@ class RedditClient:
                     post_count=len(posts),
                     duration_ms=duration_ms,
                 )
-                return self._dedupe_and_filter(posts)
+                if posts or not has_more_sources:
+                    return self._dedupe_and_filter(posts)
+                logger.warning(
+                    "reddit_source_returned_zero_falling_back",
+                    source=source.name,
+                    next_source=ordered[index + 1].name,
+                )
+                continue
             except (SourceUnavailable, requests.RequestException, json.JSONDecodeError) as exc:
                 duration_ms = int((time.monotonic() - start) * 1000)
                 self._record_failure(source, exc, duration_ms)
