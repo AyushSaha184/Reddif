@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Platform,
@@ -33,11 +33,16 @@ export function FeedScreen() {
   } = useAppStore();
   const isConnected = useNetworkStatus();
   const [selectedFlair, setSelectedFlair] = useState<FlairFilter>('All');
+  // Issue #39: Only run cleanup once per app session, not on every mount
+  const hasRunCleanup = useRef(false);
 
   useEffect(() => {
-    clearExpiredPosts();
-    clearUnread();
-  }, [clearExpiredPosts, clearUnread]);
+    if (!hasRunCleanup.current) {
+      clearExpiredPosts();
+      clearUnread();
+      hasRunCleanup.current = true;
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredPosts = useMemo(() => {
     if (selectedFlair === 'All') {
@@ -76,7 +81,7 @@ export function FeedScreen() {
       <FilterBar
         flairs={FLAIRS}
         selectedFlair={selectedFlair}
-        onSelectFlair={setSelectedFlair}
+        onSelectFlair={(flair) => setSelectedFlair(flair as FlairFilter)}
       />
 
       {filteredPosts.length > 0 ? (

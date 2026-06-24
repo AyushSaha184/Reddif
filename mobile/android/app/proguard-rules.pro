@@ -14,3 +14,18 @@
 # Firebase
 -keep class com.google.firebase.** { *; }
 -dontwarn com.google.firebase.**
+
+# Vector Icons
+-keep class com.oblador.vectoricons.** { *; }
+
+# FastImage
+-keep class com.dylanvann.fastimage.** { *; }
+
+# React Native Screens
+-keep class com.swmansion.rnscreens.** { *; }
+
+# React Native Gesture Handler
+-keep class com.swmansion.gesturehandler.** { *; }
+
+# Notifee
+-keep class io.invertase.notifee.** { *; }

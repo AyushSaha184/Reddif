@@ -13,42 +13,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import FastImage from 'react-native-fast-image';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { Post } from '../types';
+import { FLAIR_COLORS } from '../constants/colors';
 
 const CARD_WIDTH = Dimensions.get('window').width - 32;
 const DEFAULT_IMAGE_HEIGHT = 220;
 
-interface PostListItemProps {
-  post: Post;
-  accentColor: string;
-  isBookmarked: boolean;
-  onToggleBookmark: () => void;
-}
-
-interface CarouselImageProps {
-  uri: string;
-  postId: string;
-}
-
-const getRelativeTime = (createdAt: number) => {
-  const deltaMs = Date.now() - createdAt;
-  const minutes = Math.max(1, Math.floor(deltaMs / 60000));
-
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h`;
-  }
-
-  const days = Math.floor(hours / 24);
-  return `${days}d`;
-};
+const getFlairBackground = (flair: string) => FLAIR_COLORS[flair] || '#7E8793';
 
 const getFlairBackground = (flair: string) => {
   switch (flair) {
@@ -107,12 +82,20 @@ function CarouselImage({ uri, postId }: CarouselImageProps) {
     );
   }
 
+  // Issue #38: Guard against empty or invalid activeCandidate before rendering
+  if (!activeCandidate || !/^https?:\/\//i.test(activeCandidate)) {
+    return (
+      <View style={[styles.cardImage, styles.imageUnavailable]}>
+        <Icon name="image-broken-variant" size={22} color="#5E6875" />
+      </View>
+    );
+  }
+
   return (
     <FastImage
-      source={{ uri: activeCandidate }}
+      source={{ uri: activeCandidate, cache: FastImage.cacheControl.immutable }}
       style={styles.cardImage}
       resizeMode={FastImage.resizeMode.contain}
-      cacheControl={FastImage.cacheControl.cacheFirst}
       onError={() => {
         setCandidateIndex(prev => (prev < candidates.length - 1 ? prev + 1 : prev));
       }}
@@ -132,10 +115,11 @@ export function PostListItem({
   const [isBodyExpanded, setIsBodyExpanded] = useState(false);
   const [hasBodyOverflow, setHasBodyOverflow] = useState(false);
 
-  const normalizedImageUrls = useMemo(
+const normalizedImageUrls = useMemo(
     () => post.imageUrls
-      .map(url => url?.replace(/&amp;/g, '&'))
+      .map(url => url?.replace(/&/g, '&'))
       .map(url => (url?.startsWith('//') ? `https:${url}` : url))
+      .map(url => (url?.startsWith('http://') ? url.replace('http://', 'https://') : url))
       .filter((url): url is string => Boolean(url)),
     [post.imageUrls]
   );
@@ -171,15 +155,21 @@ export function PostListItem({
     }
   };
 
+  // Issue #30: Check if Reddit app is installed before attempting deep link
   const handleOpenInReddit = async () => {
     const redditUrl = `reddit://comments/${post.id}`;
     try {
-      await Linking.openURL(redditUrl);
+      const canOpen = await Linking.canOpenURL(redditUrl);
+      if (canOpen) {
+        await Linking.openURL(redditUrl);
+      } else {
+        await Linking.openURL(post.permalink);
+      }
     } catch {
       try {
         await Linking.openURL(post.permalink);
       } catch {
-        // no-op
+        Clipboard.setString(post.permalink);
       }
     }
   };

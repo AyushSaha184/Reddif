@@ -19,15 +19,20 @@ let cachedSecret: string | null = null;
  * @returns Hex-encoded HMAC signature
  */
 export async function generateHmacSignature(message: string): Promise<string> {
-  try {
-    if (!cachedSecret) {
+  if (!cachedSecret) {
+    try {
       cachedSecret = await getHmacSecret();
+    } catch {
+      console.warn('HMAC secret not configured. Set it in Settings.');
+      cachedSecret = '';
     }
-    return CryptoJS.HmacSHA256(message, cachedSecret).toString();
-  } catch (error) {
-    console.error('HMAC generation failed:', error);
-    throw new Error('Failed to generate HMAC signature');
   }
+
+  if (!cachedSecret) {
+    throw new Error('HMAC secret not configured');
+  }
+
+  return CryptoJS.HmacSHA256(message, cachedSecret).toString();
 }
 
 export async function setHmacSecret(secret: string): Promise<void> {

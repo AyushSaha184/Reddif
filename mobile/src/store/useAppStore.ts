@@ -38,11 +38,17 @@ interface AppState {
 
 const EXPIRY_DURATION = 48 * 60 * 60 * 1000; // 48 hours in milliseconds
 const MAX_RETAINED_POSTS = 250;
+const MAX_RETAINED_BOOKMARKS = 100; // Issue #28
 
+// Issue #27: Only run the expensive sort+slice when needed.
 const prunePosts = (posts: Post[]): Post[] => {
   const now = Date.now();
-  return posts
-    .filter((post) => now - post.createdAt < EXPIRY_DURATION)
+  const filtered = posts.filter((post) => now - post.createdAt < EXPIRY_DURATION);
+  // Skip sort if under the limit — avoids O(n log n) on every addPost call
+  if (filtered.length <= MAX_RETAINED_POSTS) {
+    return filtered;
+  }
+  return filtered
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, MAX_RETAINED_POSTS);
 };
@@ -72,10 +78,8 @@ export const useAppStore = create<AppState>()(
             return state;
           }
 
-          const nextPosts = prunePosts([...state.posts, post]);
-
           return {
-            posts: nextPosts,
+            posts: [...state.posts, post],
             unreadCount: state.unreadCount + 1,
           };
         });
@@ -88,14 +92,19 @@ export const useAppStore = create<AppState>()(
       },
 
       updatePostFlair: (postId, newFlair) => {
-        set((state) => ({
-          posts: state.posts.map((p) =>
-            p.id === postId ? { ...p, flair: newFlair } : p
-          ),
-          bookmarks: state.bookmarks.map((p) =>
-            p.id === postId ? { ...p, flair: newFlair } : p
-          ),
-        }));
+        set((state) => {
+          const wasSolved = state.posts.find(p => p.id === postId)?.flair === 'Solved';
+          const isNowSolved = newFlair === 'Solved';
+          return {
+            posts: state.posts.map((p) =>
+              p.id === postId ? { ...p, flair: newFlair } : p
+            ),
+            bookmarks: state.bookmarks.map((p) =>
+              p.id === postId ? { ...p, flair: newFlair } : p
+            ),
+            unreadCount: (!wasSolved && isNowSolved) ? state.unreadCount + 1 : state.unreadCount,
+          };
+        });
       },
 
       clearExpiredPosts: () => {
@@ -162,11 +171,29 @@ export const useAppStore = create<AppState>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         posts: prunePosts(state.posts),
-        bookmarks: state.bookmarks,
+        // Issue #28: Limit persisted bookmarks to prevent unbounded storage growth
+        bookmarks: state.bookmarks.slice(0, MAX_RETAINED_BOOKMARKS),
         trackedPosts: state.trackedPosts,
         settings: state.settings,
         hasUpdateAvailable: state.hasUpdateAvailable,
       }),
+      merge: (persistedState: any, currentState: AppState) => {
+        // Shallow merge persisted top-level, but deeply merge settings to avoid losing new default keys
+        const merged = { ...currentState, ...persistedState };
+        const mergedSettings = {
+          ...currentState.settings,
+          ...(persistedState?.settings || {}),
+        };
+        // Ensure notifToggles defaults exist if old persisted state is missing them
+        mergedSettings.notifToggles = {
+          paidNoAI: true,
+          paidAIOK: true,
+          free: true,
+          ...((persistedState?.settings?.notifToggles) || {}),
+        };
+        merged.settings = mergedSettings;
+        return merged as AppState;
+      },
     }
   )
 );

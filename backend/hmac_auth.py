@@ -13,7 +13,10 @@ from slowapi.util import get_remote_address
 
 logger = logging.getLogger(__name__)
 
-# Store used nonces with expiry times (in production, use Redis)
+# Store used nonces with expiry times.
+# Issue #13: This is NOT thread-safe across multiple uvicorn workers.
+# In a multi-process deployment, nonces won't be shared, allowing replay
+# attacks across workers. Use Redis or a shared cache for production.
 _used_nonces: Dict[str, float] = {}
 NONCE_EXPIRY_SECONDS = 300  # 5 minutes
 
@@ -135,11 +138,14 @@ async def verify_hmac_signature(request: Request, hmac_auth: HMACAuth) -> bool:
             detail="Missing X-Nonce header",
         )
 
-    # Build the message to verify including timestamp and nonce
-    # Format: "METHOD:/path/{post_id}:timestamp:nonce"
+    # Build the message to verify including timestamp, nonce, and body hash.
+    # Issue #14: Include body hash so POST payloads are authenticated.
+    # Format: "METHOD:/path/{post_id}:timestamp:nonce:body_hash"
     path = request.url.path
     method = request.method
-    message = f"{method}:{path}:{timestamp}:{nonce}"
+    body = await request.body()
+    body_hash = hashlib.sha256(body).hexdigest() if body else hashlib.sha256(b"").hexdigest()
+    message = f"{method}:{path}:{timestamp}:{nonce}:{body_hash}"
 
     logger.debug("hmac_message_verifying", message=message)
 

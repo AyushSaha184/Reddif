@@ -27,23 +27,20 @@ interface PostCardProps {
 }
 
 const Icon = ({ name, size = 24, color = '#000' }: { name: string; size?: number; color?: string }) => {
-  const icons: Record<string, string> = {
-    bookmark: 'https://img.icons8.com/ios-filled/50/bookmark.png',
-    'bookmark-outline': 'https://img.icons8.com/ios/50/bookmark--edge.png',
-    eye: 'https://img.icons8.com/ios-filled/50/visible.png',
-    'eye-off': 'https://img.icons8.com/ios/50/invisible.png',
-    share: 'https://img.icons8.com/ios/50/share.png',
-    'open-in-new': 'https://img.icons8.com/ios/50/open-in-new.png',
-    clock: 'https://img.icons8.com/ios/50/time-machine.png',
-    link: 'https://img.icons8.com/ios/50/link.png',
-    check: 'https://img.icons8.com/ios/50/checkmark.png',
+  const iconMap: Record<string, string> = {
+    bookmark: 'bookmark',
+    'bookmark-outline': 'bookmark-outline',
+    eye: 'eye',
+    'eye-off': 'eye-off',
+    share: 'share-variant',
+    'open-in-new': 'open-in-new',
+    clock: 'clock-outline',
+    link: 'link',
+    check: 'check',
   };
 
   return (
-    <Image
-      source={{ uri: icons[name] || icons['link'] }}
-      style={{ width: size, height: size, tintColor: color }}
-    />
+    <Icon name={iconMap[name] || 'link'} size={size} color={color} />
   );
 };
 
@@ -83,10 +80,12 @@ export function PostCard({ post, isActive }: PostCardProps) {
     Clipboard.setString(post.permalink);
   };
 
+  // Issue #37: Update local state on success, not just tracked status
   const handleMarkSolved = async () => {
     const success = await apiService.markSolved(post.id);
     if (success) {
       toggleTrackedPost(post.id);
+      useAppStore.getState().updatePostFlair(post.id, 'Solved');
     }
   };
 
@@ -105,11 +104,11 @@ export function PostCard({ post, isActive }: PostCardProps) {
         <View style={styles.content}>
           <View style={styles.header}>
             <FlairChip flair={post.flair} />
-            <BudgetBadge budget={post.detectedBudget} />
-            {expiry && (
+            {post.detectedBudget && <BudgetBadge budget={post.detectedBudget} />}
+            {!expiry.expired && (
               <View style={styles.expiryContainer}>
                 <Icon name="clock" size={14} color="#666" />
-                <Text style={styles.expiryText}>{expiry}</Text>
+                <Text style={styles.expiryText}>{`${expiry.hours}h ${expiry.minutes}m`}</Text>
               </View>
             )}
           </View>

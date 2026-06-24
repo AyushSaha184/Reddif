@@ -35,8 +35,12 @@ import {
   setInitialPermissionPromptShown,
 } from './src/services/permissionPrefs';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
+try {
+  if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+  }
+} catch (e) {
+  console.warn('Layout animation not available');
 }
 
 const Tab = createBottomTabNavigator();
@@ -45,7 +49,7 @@ const Stack = createStackNavigator();
 // Deep linking configuration - kept for potential future use
 // TODO: Add PostDetails screen if deep linking is needed
 const linking: LinkingOptions<any> = {
-  prefixes: ['wizardleads://'],
+  prefixes: ['reddif://', 'com.reddifleadmonitor://'],
   config: {
     screens: {
       Feed: 'feed',
@@ -199,7 +203,6 @@ function TabNavigator() {
 
 function App(): JSX.Element {
   const { settings, clearExpiredPosts } = useAppStore();
-  const lastAppActiveSyncRef = React.useRef(0);
 
   const syncTopicSubscriptions = React.useCallback(async (reason: string): Promise<void> => {
     try {
@@ -239,7 +242,7 @@ function App(): JSX.Element {
     clearExpiredPosts();
 
     // Check for updates on app start
-    refreshUpdateAvailability();
+    refreshUpdateAvailability().catch(console.warn);
 
     return () => {
       if (unsubscribeForegroundMessages) {
@@ -259,11 +262,6 @@ function App(): JSX.Element {
       'change',
       (nextState: AppStateStatus) => {
         if (nextState === 'active') {
-          const now = Date.now();
-          if (now - lastAppActiveSyncRef.current < 5 * 60 * 1000) {
-            return;
-          }
-          lastAppActiveSyncRef.current = now;
           syncTopicSubscriptions('app-active');
         }
       }

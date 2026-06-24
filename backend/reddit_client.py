@@ -225,6 +225,17 @@ class BaseSource:
             return f"£{amount}"
         return f"${amount}"
 
+    @staticmethod
+    def _is_valid_image_url(url: str) -> bool:
+        """Validate that a URL uses http/https scheme to prevent JS/data URI injection."""
+        from urllib.parse import urlparse
+
+        try:
+            parsed = urlparse(url)
+            return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+        except Exception:
+            return False
+
     def _extract_image_urls(self, post_data: dict[str, Any]) -> list[str]:
         image_urls: list[str] = []
 
@@ -237,12 +248,12 @@ class BaseSource:
                 if "s" in media:
                     url = media["s"].get("u", "")
                     if url:
-                        image_urls.append(html.unescape(url).split("?")[0])
+                        image_urls.append(html.unescape(url))
                 elif "p" in media:
                     for preview in media["p"]:
                         url = preview.get("u", "")
                         if url:
-                            image_urls.append(html.unescape(url).split("?")[0])
+                            image_urls.append(html.unescape(url))
                             break
 
         url = post_data.get("url") or ""
@@ -261,7 +272,8 @@ class BaseSource:
             if source_url:
                 image_urls.append(html.unescape(source_url))
 
-        return list(dict.fromkeys(image_urls))
+        # Filter out invalid URLs (e.g. javascript:, data: URIs) — Issue #41
+        return list(dict.fromkeys(u for u in image_urls if self._is_valid_image_url(u)))
 
     def _safe_int(self, value: Any, default: int = 0) -> int:
         try:
@@ -367,6 +379,8 @@ class OAuthRedditSource(BaseSource):
         self.enabled = bool(self.client_id and self.client_secret)
         self._access_token: str | None = None
         self._access_token_expires_at = 0.0
+        self._token_refresh_failures = 0
+        self._token_refresh_backoff_until = 0.0
 
     def _get_access_token(self) -> str:
         if not self.enabled:
@@ -376,6 +390,13 @@ class OAuthRedditSource(BaseSource):
         if self._access_token and now < self._access_token_expires_at:
             return self._access_token
 
+        # Issue #42: Exponential backoff for consecutive token refresh failures
+        if now < self._token_refresh_backoff_until:
+            raise SourceUnavailable(
+                f"oauth_token_refresh_backoff (retry after {int(self._token_refresh_backoff_until - now)}s)",
+                url=REDDIT_TOKEN_URL,
+            )
+
         data: dict[str, str] = {"grant_type": "client_credentials"}
         if self.username and self.password:
             data = {
@@ -384,20 +405,28 @@ class OAuthRedditSource(BaseSource):
                 "password": self.password,
             }
 
-        response = self.session.post(
-            REDDIT_TOKEN_URL,
-            auth=HTTPBasicAuth(self.client_id, self.client_secret),
-            data=data,
-            headers={
-                "User-Agent": self.session.headers["User-Agent"],
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-            },
-            timeout=30,
-        )
         try:
+            response = self.session.post(
+                REDDIT_TOKEN_URL,
+                auth=HTTPBasicAuth(self.client_id, self.client_secret),
+                data=data,
+                headers={
+                    "User-Agent": self.session.headers["User-Agent"],
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json",
+                },
+                timeout=30,
+            )
             response.raise_for_status()
         except requests.HTTPError as exc:
+            self._token_refresh_failures += 1
+            backoff = min(30 * (2 ** (self._token_refresh_failures - 1)), 600)
+            self._token_refresh_backoff_until = now + backoff
+            logger.warning(
+                "oauth_token_refresh_failed",
+                consecutive_failures=self._token_refresh_failures,
+                backoff_seconds=backoff,
+            )
             raise SourceUnavailable(
                 str(exc),
                 status_code=response.status_code,
@@ -413,6 +442,8 @@ class OAuthRedditSource(BaseSource):
         expires_in = int(token_data.get("expires_in", 3600))
         self._access_token = access_token
         self._access_token_expires_at = now + max(expires_in - 60, 60)
+        self._token_refresh_failures = 0
+        self._token_refresh_backoff_until = 0.0
         return access_token
 
     def _auth_headers(self) -> dict[str, str]:
@@ -546,6 +577,9 @@ class RssRedditSource(BaseSource):
         return match.group(1) if match else ""
 
     def _flair_from_title(self, title: str) -> str:
+        # Issue #6: This is a heuristic — brackets like [OC] may be misidentified.
+        # canonicalize_flair() downstream returns None for non-matching text,
+        # which effectively filters false positives.
         match = re.match(r"^\s*\[([^\]]+)\]", title)
         return match.group(1) if match else ""
 
@@ -623,9 +657,18 @@ class PushshiftRedditSource(BaseSource):
         return None
 
     def _parse_record(self, record: dict[str, Any], include_non_target: bool) -> ParsedSubmission | None:
+        # Issue #7: Handle link_flair_richtext as a rich text array, not a string.
+        flair_text = record.get("link_flair_text")
+        if not flair_text and record.get("link_flair_richtext"):
+            richtext = record.get("link_flair_richtext")
+            if isinstance(richtext, list):
+                flair_text = "".join(
+                    part.get("t", "") for part in richtext if isinstance(part, dict)
+                )
+
         mapped = {
             "id": record.get("id"),
-            "link_flair_text": record.get("link_flair_text") or record.get("link_flair_richtext"),
+            "link_flair_text": flair_text,
             "title": record.get("title"),
             "permalink": record.get("permalink"),
             "created_utc": record.get("created_utc"),
@@ -730,6 +773,15 @@ class OldRedditHtmlSource(BaseSource):
         score_node = thing.select_one(".score.unvoted")
         score = self._parse_score(score_node.get_text(" ", strip=True) if score_node else "")
 
+        selftext = ""
+        usertext_md = thing.select_one(".usertext-body .md")
+        if usertext_md:
+            selftext = html.unescape(usertext_md.get_text(" ", strip=True))
+        else:
+            expando_md = thing.select_one(".expando .usertext-body .md")
+            if expando_md:
+                selftext = html.unescape(expando_md.get_text(" ", strip=True))
+
         return ParsedSubmission(
             post_id=post_id,
             flair=flair,
@@ -739,6 +791,7 @@ class OldRedditHtmlSource(BaseSource):
             detected_budget=self._extract_budget(title),
             created_at=created_at,
             author=str(thing.get("data-author") or "[deleted]"),
+            selftext=selftext,
             subreddit=self.subreddit,
             score=score,
             external_url=external_url,
@@ -751,14 +804,22 @@ class OldRedditHtmlSource(BaseSource):
         )
 
     def _parse_score(self, value: str) -> int | None:
+        """Parse score strings like '1.2k', '12k', '1.5m', '•' from old Reddit HTML."""
         if not value or value == "•":
             return None
         value = value.lower().replace(",", "").replace(" points", "").replace(" point", "")
-        multiplier = 1000 if value.endswith("k") else 1
-        value = value.rstrip("k")
+        # Issue #1: Use slicing instead of rstrip to avoid stripping multiple trailing chars
+        # (e.g. "kk" -> "" with rstrip). Also handle "m" suffix for millions.
+        multiplier = 1
+        if value.endswith("k"):
+            multiplier = 1000
+            value = value[:-1]
+        elif value.endswith("m"):
+            multiplier = 1_000_000
+            value = value[:-1]
         try:
             return int(float(value) * multiplier)
-        except ValueError:
+        except (ValueError, TypeError):
             return None
 
     def _looks_like_image(self, url: str) -> bool:
@@ -954,7 +1015,10 @@ class RedditClient:
                     post_count=len(posts),
                     duration_ms=duration_ms,
                 )
-                if posts or not has_more_sources:
+                if posts or source.name == "oauth" or not has_more_sources:
+                    # Issue #4: Log when the last source also returns empty
+                    if not posts:
+                        logger.warning("all_sources_returned_empty", subreddit=self.subreddit)
                     return self._dedupe_and_filter(posts)
                 logger.warning(
                     "reddit_source_returned_zero_falling_back",
@@ -975,6 +1039,14 @@ class RedditClient:
         return []
 
     def _dedupe_and_filter(self, posts: list[ParsedSubmission]) -> list[ParsedSubmission]:
+        # Issue #3: Prevent _best_seen_posts from growing unbounded
+        if len(self._best_seen_posts) > 10_000:
+            logger.info(
+                "best_seen_posts_pruned",
+                previous_size=len(self._best_seen_posts),
+            )
+            self._best_seen_posts.clear()
+
         new_posts: list[ParsedSubmission] = []
         for post in posts:
             if not post.post_id:
@@ -1012,7 +1084,6 @@ class RedditClient:
                 for post in posts:
                     try:
                         self.on_new_post(post)
-                        self._seen_posts.add(post.post_id)
                         logger.info(
                             "reddit_post_processed",
                             post_id=post.post_id,
@@ -1021,6 +1092,10 @@ class RedditClient:
                         )
                     except Exception as exc:
                         logger.error("callback_failed", post_id=post.post_id, error=str(exc))
+                    finally:
+                        # Issue #2: Always mark as seen, even if on_new_post throws,
+                        # to prevent re-processing on the next poll cycle.
+                        self._seen_posts.add(post.post_id)
 
                 self._sleep_after_cycle()
             except KeyboardInterrupt:

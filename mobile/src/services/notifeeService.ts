@@ -13,7 +13,7 @@ class NotifeeService {
   }
 
   async showStatusUpdateNotification(title: string, newFlair: string): Promise<void> {
-    const shortTitle = title.length > 50 ? `${title.slice(0, 50)}...` : title;
+    const shortTitle = Array.from(title).slice(0, 50).join('') + (title.length > 50 ? '...' : '');
     const body =
       newFlair === 'Solved'
         ? `Bookmarked post is now solved: "${shortTitle}"`
@@ -34,9 +34,10 @@ class NotifeeService {
 
   async showNewPostNotification(title: string, flair: string, budget?: string | null): Promise<void> {
     const bodyBudget = budget ? ` • ${budget}` : '';
+    const truncatedTitle = Array.from(title).slice(0, 50).join('') + (title.length > 50 ? '...' : '');
     await notifee.displayNotification({
       title: `[${flair}] New Post`,
-      body: `${title.slice(0, 80)}${bodyBudget}`,
+      body: `${truncatedTitle}${bodyBudget}`,
       android: {
         channelId: 'reddit-leads',
         importance: AndroidImportance.HIGH,

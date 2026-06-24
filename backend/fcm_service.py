@@ -128,7 +128,12 @@ class FCMService:
         created_at: int,
         metadata: dict[str, Any] | None = None,
     ) -> bool:
-        """Send notification for new post with notification + data payload."""
+        """Send notification for new post with notification + data payload.
+
+        Issue #15: This sends to ALL topic aliases (e.g. paid_no_ai and paid_noai)
+        for backward compatibility with older mobile app builds. Modern clients
+        unsubscribe from legacy topics on startup, preventing duplicate delivery.
+        """
         canonical_flair = canonicalize_flair(flair) or flair
         topics = self._get_topics(canonical_flair)
         if not topics:
@@ -270,7 +275,13 @@ class FCMService:
             return False
 
     def send_expired_notification(self, post_id: str) -> bool:
-        """Send data-only notification for expired post."""
+        """Send data-only notification for expired post.
+
+        Issue #16: Broadcasts to ALL flair topics regardless of the post's original
+        flair. This is by design — the mobile app uses postId to remove the correct
+        post locally. Sending to a single topic would miss users whose subscription
+        changed after receiving the original NEW_POST notification.
+        """
         try:
             # Broadcast to all topics
             topics = list(FLAIR_TO_TOPIC.values())

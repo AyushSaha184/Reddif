@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   FlatList,
   SafeAreaView,
@@ -17,7 +17,7 @@ const getThemeBackground = (theme: 'system' | 'dark' | 'amoled') =>
 export function BookmarksScreen() {
   const { bookmarks, removeBookmark, settings } = useAppStore();
   const backgroundColor = getThemeBackground(settings.theme);
-  const sortedBookmarks = [...bookmarks].sort((a, b) => b.createdAt - a.createdAt);
+  const sortedBookmarks = useMemo(() => [...bookmarks].sort((a, b) => b.createdAt - a.createdAt), [bookmarks]);
 
   if (bookmarks.length === 0) {
     return (

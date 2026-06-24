@@ -96,12 +96,9 @@ export function SettingsScreen() {
       setDraftBackendUrl(backendUrl || '');
       setShowUrlModal(false);
       setShowSecretModal(false);
-      return () => {
-        setDraftSettings(settings);
-        setDraftBackendUrl(backendUrl || '');
-        setShowUrlModal(false);
-        setShowSecretModal(false);
-      };
+      // Issue #31: Cleanup no longer sets state to avoid warnings on unmount.
+      // The focus callback already resets state on re-focus.
+      return () => {};
     }, [settings, backendUrl]),
   );
 
@@ -136,21 +133,16 @@ export function SettingsScreen() {
   };
 
   const handleSaveBackendUrlDraft = () => {
+    const trimmedUrl = urlInput.trim();
     try {
-      const trimmedUrl = urlInput.trim();
-      if (!trimmedUrl) {
-        Alert.alert('Error', 'Please enter a valid URL');
-        return;
+      const url = new URL(trimmedUrl);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        throw new Error();
       }
-
-      if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
-        throw new Error('URL must start with http:// or https://');
-      }
-
       setDraftBackendUrl(trimmedUrl);
       setShowUrlModal(false);
-    } catch (error) {
-      Alert.alert('Error', 'Invalid URL format. Must start with http:// or https://');
+    } catch {
+      Alert.alert('Error', 'Please enter a valid URL like http://192.168.1.100:8000');
     }
   };
 

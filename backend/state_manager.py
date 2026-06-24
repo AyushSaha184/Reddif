@@ -224,19 +224,27 @@ class StateManager:
             return False
 
     def delete_expired_posts(self, expiry_seconds: int = 172800) -> list[str]:
-        """Delete posts older than expiry_seconds (default 48 hours)."""
+        """Delete posts older than expiry_seconds (default 48 hours).
+
+        Issue #12: Solved posts are preserved to avoid deleting posts the user
+        may have bookmarked or still cares about.
+        """
         import time
 
         cutoff_time = int(time.time()) - expiry_seconds
 
         with self._get_connection() as conn:
             cursor = conn.execute(
-                "SELECT post_id FROM posts WHERE created_at < ?", (cutoff_time,)
+                "SELECT post_id FROM posts WHERE created_at < ? AND status != 'solved'",
+                (cutoff_time,),
             )
             expired_ids = [row[0] for row in cursor.fetchall()]
 
             if expired_ids:
-                conn.execute("DELETE FROM posts WHERE created_at < ?", (cutoff_time,))
+                conn.execute(
+                    "DELETE FROM posts WHERE created_at < ? AND status != 'solved'",
+                    (cutoff_time,),
+                )
                 conn.commit()
                 logger.info(f"Deleted {len(expired_ids)} expired posts")
 

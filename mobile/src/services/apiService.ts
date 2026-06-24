@@ -1,5 +1,6 @@
 import axios, {AxiosInstance, AxiosRequestConfig, AxiosError} from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import CryptoJS from 'crypto-js';
 import {Post} from '../types';
 import {generateHmacSignature} from './hmacService';
 
@@ -60,21 +61,27 @@ export const setBackendUrl = async (url: string): Promise<void> => {
 
 /**
  * Force HTTPS for non-local URLs
+ * Issue #22: Early return for already-https URLs; include 172.16-31.x in local ranges
  */
 const getSecureUrl = (url: string): string => {
-  const isLocal = url.startsWith('http://localhost') || 
-                  url.startsWith('http://10.') ||
-                  url.startsWith('http://192.') ||
-                  url.startsWith('http://127.');
-  
-  if (!isLocal) {
-    return url.replace('http://', 'https://');
-  }
+  if (url.startsWith('https://')) return url;
+
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname;
+    const isLocal = hostname === 'localhost' ||
+      /^127\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname);
+    if (!isLocal) return url.replace('http://', 'https://');
+  } catch {}
+
   return url;
 };
 
 // Create axios instance
-const apiClient: AxiosInstance = axios.create({
+export const apiClient: AxiosInstance = axios.create({
   timeout: 15000,
   validateStatus: (status) => status < 500,
 });
@@ -94,6 +101,16 @@ apiClient.interceptors.request.use(
       nonce = generateNonce();
       headers['X-Timestamp'] = timestamp;
       headers['X-Nonce'] = nonce;
+    }
+
+    const path = config.url || '/';
+    const message = `${config.method?.toUpperCase() || 'GET'}:${path}:${timestamp}:${nonce}`;
+
+    try {
+      const signature = await generateHmacSignature(message);
+      headers['X-Signature'] = signature;
+    } catch {
+      console.warn('HMAC signature generation failed, request may fail');
     }
 
     config.headers = headers;
@@ -143,10 +160,21 @@ apiClient.interceptors.response.use(
   }
 );
 
+// Issue #23: crypto.getRandomValues may not be available in all RN environments.
 function generateNonce(): string {
-  const array = new Uint8Array(16);
-  crypto.getRandomValues(array);
-  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  try {
+    const array = new Uint8Array(16);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    // Fallback using Math.random when crypto polyfill is unavailable
+    const chars = '0123456789abcdef';
+    let result = '';
+    for (let i = 0; i < 32; i++) {
+      result += chars[Math.floor(Math.random() * 16)];
+    }
+    return result;
+  }
 }
 
 export const apiService = {
@@ -165,6 +193,8 @@ export const apiService = {
         flair: data.flair,
         title: data.title,
         permalink: data.permalink,
+        // Issue #24: Backend sends image_urls as a JSON array, but defensive
+        // parsing handles the edge case where it arrives as a string.
         imageUrls: typeof data.image_urls === 'string' 
           ? JSON.parse(data.image_urls || '[]') 
           : data.image_urls || [],
@@ -189,7 +219,10 @@ export const apiService = {
       const timestamp = Math.floor(Date.now() / 1000);
       const nonce = generateNonce();
       const baseUrl = await getBackendUrl();
-      const message = `POST:/mark-solved/${postId}:${timestamp}:${nonce}`;
+      // Issue #14: Include body hash in HMAC message to authenticate payload
+      const bodyStr = JSON.stringify({});
+      const bodyHash = CryptoJS.SHA256(bodyStr).toString();
+      const message = `POST:/mark-solved/${postId}:${timestamp}:${nonce}:${bodyHash}`;
       
       logger.info('markSolved_request', { postId, timestamp, nonce: nonce.substring(0, 8) + '...' });
       

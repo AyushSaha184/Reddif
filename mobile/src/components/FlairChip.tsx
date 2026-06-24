@@ -1,28 +1,16 @@
 import React from 'react';
 import {View, Text, StyleSheet} from 'react-native';
+import {FLAIR_COLORS} from '../constants/colors';
 
 interface FlairChipProps {
   flair: string;
 }
 
 export function FlairChip({flair}: FlairChipProps) {
-  const getBackgroundColor = () => {
-    switch (flair) {
-      case 'Paid - No AI':
-        return '#FF6B35';
-      case 'Paid - AI OK':
-        return '#FF9800';
-      case 'Free':
-        return '#4CAF50';
-      case 'Solved':
-        return '#2196F3';
-      default:
-        return '#888888';
-    }
-  };
+  const backgroundColor = FLAIR_COLORS[flair] || '#888888';
 
   return (
-    <View style={[styles.container, {backgroundColor: getBackgroundColor()}]}>
+    <View style={[styles.container, {backgroundColor}]}>
       <Text style={styles.text}>{flair}</Text>
     </View>
   );

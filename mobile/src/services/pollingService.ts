@@ -1,27 +1,19 @@
-import { getBackendUrl } from './apiService';
+import { apiClient } from './apiService';
 import { useAppStore } from '../store/useAppStore';
 import { Post } from '../types';
 import { notifeeService } from './notifeeService';
+import { canonicalizeFlairLabel } from './fcmService';
 
 const POLL_INTERVAL_MS = 60000;
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 
-const normalizeFlair = (flair: string): string => {
-  return flair
-    .trim()
-    .toLowerCase()
-    .replace(/:[a-z0-9_+-]+:/g, ' ')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-};
-
 const isFlairEnabled = (flair: string): boolean => {
   const { settings } = useAppStore.getState();
-  const normalized = normalizeFlair(flair);
-  if (normalized === 'paid-no-ai') return settings.notifToggles.paidNoAI;
-  if (normalized === 'paid-ai-ok') return settings.notifToggles.paidAIOK;
-  if (normalized === 'free') return settings.notifToggles.free;
+  const toggles = settings?.notifToggles ?? { paidNoAI: true, paidAIOK: true, free: true };
+  const canonical = canonicalizeFlairLabel(flair);
+  if (canonical === 'Paid - No AI') return toggles.paidNoAI;
+  if (canonical === 'Paid - AI OK') return toggles.paidAIOK;
+  if (canonical === 'Free') return toggles.free;
   return false;
 };
 
@@ -44,15 +36,8 @@ interface BackendPost {
 export const pollingService = {
   async fetchAndProcessPosts(): Promise<void> {
     try {
-      const baseUrl = await getBackendUrl();
-      const response = await fetch(`${baseUrl}/posts`, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-
-      if (!response.ok) return;
-
-      const posts: BackendPost[] = await response.json();
+      const response = await apiClient.get('/posts');
+      const posts: BackendPost[] = response.data;
       const { addPost, posts: existingPosts } = useAppStore.getState();
       const existingIds = new Set(existingPosts.map((p) => p.id));
 
@@ -84,8 +69,9 @@ export const pollingService = {
           // Notification display failure shouldn't break the flow
         }
       }
-    } catch {
-      // Silently fail - network errors are expected when offline
+    } catch (error) {
+      // Issue #36: Log errors instead of silently swallowing them
+      console.warn('Polling error:', error);
     }
   },
 

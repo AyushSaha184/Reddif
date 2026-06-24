@@ -57,20 +57,22 @@ const canonicalizeFlairLabel = (flair: string | undefined): string => {
   return flair || 'Unknown';
 };
 
+// Issue #25: Use canonicalizeFlairLabel for consistent matching with backend.
 const isFlairEnabled = (flair: string | undefined): boolean => {
   const {settings} = useAppStore.getState();
-  const normalized = normalizeFlair(flair);
+  const toggles = settings?.notifToggles ?? {paidNoAI: true, paidAIOK: true, free: true};
+  const canonical = canonicalizeFlairLabel(flair);
 
-  if (normalized === 'paid-no-ai') {
-    return settings.notifToggles.paidNoAI;
+  if (canonical === 'Paid - No AI') {
+    return toggles.paidNoAI;
   }
 
-  if (normalized === 'paid-ai-ok') {
-    return settings.notifToggles.paidAIOK;
+  if (canonical === 'Paid - AI OK') {
+    return toggles.paidAIOK;
   }
 
-  if (normalized === 'free') {
-    return settings.notifToggles.free;
+  if (canonical === 'Free') {
+    return toggles.free;
   }
 
   return false;
@@ -111,10 +113,6 @@ export const handleIncomingFCMData = async (
   switch (message.type) {
     case 'NEW_POST':
       if (message.postId) {
-        if (!isFlairEnabled(message.flair)) {
-          return;
-        }
-
         const post: Post = {
           id: message.postId,
           flair: canonicalizeFlairLabel(message.flair),
@@ -128,9 +126,8 @@ export const handleIncomingFCMData = async (
         };
 
         addPost(post);
-        // NEW_POST already contains an FCM notification payload from backend.
-        // In background, Android auto-displays it, so skip local notifee to avoid duplicates.
-        if (!options.isBackgroundHandler) {
+
+        if (isFlairEnabled(message.flair) && !options.isBackgroundHandler) {
           try {
             await notifeeService.showNewPostNotification(
               post.title,
@@ -138,7 +135,6 @@ export const handleIncomingFCMData = async (
               post.detectedBudget
             );
           } catch (error) {
-            // Keep data handling successful even if local notification display fails.
             console.warn('Failed to show NEW_POST notification', error);
           }
         }
@@ -259,10 +255,11 @@ class FCMService {
       return;
     }
 
+    const toggles = settings?.notifToggles ?? { paidNoAI: true, paidAIOK: true, free: true };
     const topicPlan = [
-      {topic: FLAIR_TO_TOPIC['paid-no-ai'], enabled: settings.notifToggles.paidNoAI},
-      {topic: FLAIR_TO_TOPIC['paid-ai-ok'], enabled: settings.notifToggles.paidAIOK},
-      {topic: FLAIR_TO_TOPIC.free, enabled: settings.notifToggles.free},
+      {topic: FLAIR_TO_TOPIC['paid-no-ai'], enabled: toggles.paidNoAI},
+      {topic: FLAIR_TO_TOPIC['paid-ai-ok'], enabled: toggles.paidAIOK},
+      {topic: FLAIR_TO_TOPIC.free, enabled: toggles.free},
     ];
 
     for (const {topic, enabled} of topicPlan) {
@@ -290,6 +287,14 @@ class FCMService {
       await messaging().unsubscribeFromTopic(legacyTopic);
     }
 
+    this.lastTopicSyncKey = null;
+  }
+
+  /**
+   * Issue #26: Force re-sync of topic subscriptions.
+   * Call when the app comes to foreground or permission state may have changed.
+   */
+  resetSyncState(): void {
     this.lastTopicSyncKey = null;
   }
 

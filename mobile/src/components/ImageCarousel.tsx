@@ -1,5 +1,5 @@
 import React, {useState, useEffect} from 'react';
-import {View, ScrollView, StyleSheet, Dimensions} from 'react-native';
+import {View, ScrollView, StyleSheet, Dimensions, Text} from 'react-native';
 import FastImage from 'react-native-fast-image';
 
 const {width} = Dimensions.get('window');
@@ -11,11 +11,16 @@ interface ImageCarouselProps {
 
 export function ImageCarousel({images, height}: ImageCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [images]);
 
   useEffect(() => {
     if (images.length > 1) {
       FastImage.preload(
-        images.slice(0, 1).map(uri => ({uri}))
+        images.slice(0, 3).map(uri => ({uri}))
       );
     }
   }, [images]);
@@ -25,13 +30,23 @@ export function ImageCarousel({images, height}: ImageCarouselProps) {
   }
 
   if (images.length === 1) {
+    if (hasError) {
+      return (
+        <View style={[styles.container, {height}, styles.imageError]}>
+          <Text style={styles.errorText}>Image unavailable</Text>
+        </View>
+      );
+    }
     return (
       <View style={[styles.container, {height}]}>
         <FastImage
-          source={{uri: images[0]}}
+          source={{
+            uri: images[0],
+            cache: FastImage.cacheControl.immutable,
+          }}
           style={[styles.image, {height}]}
           resizeMode={FastImage.resizeMode.contain}
-          cacheControl={FastImage.cacheControl.cacheFirst}
+          onError={() => setHasError(true)}
         />
       </View>
     );
@@ -50,10 +65,12 @@ export function ImageCarousel({images, height}: ImageCarouselProps) {
         {images.map((uri, index) => (
           <FastImage
             key={index}
-            source={{uri}}
+            source={{
+              uri,
+              cache: FastImage.cacheControl.immutable,
+            }}
             style={[styles.image, {height, width}]}
             resizeMode={FastImage.resizeMode.contain}
-            cacheControl={FastImage.cacheControl.cacheFirst}
           />
         ))}
       </ScrollView>
@@ -81,6 +98,14 @@ const styles = StyleSheet.create({
   },
   image: {
     width: '100%',
+  },
+  imageError: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    color: '#999',
+    fontSize: 14,
   },
   pagination: {
     flexDirection: 'row',

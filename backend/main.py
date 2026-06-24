@@ -80,7 +80,8 @@ def resolve_subreddit(value: str | None) -> str:
     # - PhotoshopRequest
     # - r/PhotoshopRequest
     # - https://www.reddit.com/r/PhotoshopRequest/
-    match = re.search(r"(?:reddit\.com/)?r/([A-Za-z0-9_]+)", raw, re.IGNORECASE)
+    # Issue #18: Allow hyphens in subreddit names (e.g. r/Ask-Reddit)
+    match = re.search(r"(?:reddit\.com/)?r/([A-Za-z0-9_\-]+)", raw, re.IGNORECASE)
     if match:
         return match.group(1)
 
@@ -89,9 +90,26 @@ def resolve_subreddit(value: str | None) -> str:
     return cleaned or default_subreddit
 
 # Configuration
-ALLOWED_ORIGINS = (
-    os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
-)
+# Issue #17: Filter empty strings from ALLOWED_ORIGINS to prevent invalid CORS config
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+
+def _safe_int_env(name: str, default: int) -> int:
+    """Issue #19: Safely parse integer env vars with fallback."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger_startup = structlog.get_logger("config")
+        logger_startup.warning("invalid_int_config", env_var=name, raw_value=raw, using_default=default)
+        return default
+
 
 CONFIG = {
     "subreddit_name": resolve_subreddit(
@@ -99,18 +117,18 @@ CONFIG = {
     ),
     "firebase_project_id": os.getenv("FIREBASE_PROJECT_ID"),
     "hmac_secret": os.getenv("HMAC_SECRET", "change-this-in-production"),
-    "rate_limit": int(os.getenv("RATE_LIMIT", "60")),
+    "rate_limit": _safe_int_env("RATE_LIMIT", 60),
     "log_level": os.getenv("LOG_LEVEL", "INFO"),
     "host": os.getenv("HOST", "0.0.0.0"),
-    "port": int(os.getenv("PORT", "8000")),
-    "poll_interval": int(os.getenv("POLL_INTERVAL", "30")),
+    "port": _safe_int_env("PORT", 8000),
+    "poll_interval": _safe_int_env("POLL_INTERVAL", 30),
     "reddit_client_id": os.getenv("REDDIT_CLIENT_ID"),
     "reddit_client_secret": os.getenv("REDDIT_CLIENT_SECRET"),
     "reddit_username": os.getenv("REDDIT_USERNAME"),
     "reddit_password": os.getenv("REDDIT_PASSWORD"),
     "reddit_user_agent": os.getenv("REDDIT_USER_AGENT"),
     "pushshift_mirrors": os.getenv("PUSHSHIFT_MIRRORS", ""),
-    "poll_jitter_seconds": int(os.getenv("POLL_JITTER_SECONDS", "5")),
+    "poll_jitter_seconds": _safe_int_env("POLL_JITTER_SECONDS", 5),
 }
 
 # Start time for uptime calculation
@@ -158,15 +176,12 @@ logger.info(
     pushshift_mirrors_configured=bool(CONFIG["pushshift_mirrors"]),
 )
 
-# Initialize scheduler jobs (only if both reddit and fcm are available)
-scheduler_jobs = (
-    SchedulerJobs(
-        state_manager=state_manager,
-        fcm_service=fcm_service,
-        reddit_client=reddit_client,
-    )
-    if reddit_client and fcm_service
-    else None
+# Issue #9: Always create SchedulerJobs so cleanup and flair polling run
+# even without FCM. SchedulerJobs handles fcm_service=None gracefully.
+scheduler_jobs = SchedulerJobs(
+    state_manager=state_manager,
+    fcm_service=fcm_service,
+    reddit_client=reddit_client,
 )
 
 # Scheduler
@@ -177,14 +192,9 @@ def handle_new_submission(
     parsed: ParsedSubmission, state: StateManager, fcm: FCMService | None
 ) -> None:
     """Handle a new Reddit submission."""
-    if not fcm:
-        logger.warning("FCM not initialized, cannot send notifications")
-        return
-
-    # Check if post already exists
-    if state.post_exists(parsed.post_id):
-        logger.warning(f"Post {parsed.post_id} already exists, skipping")
-        return
+    # Issue #8: Removed redundant state.post_exists() check.
+    # Rely solely on insert_post() which handles IntegrityError, avoiding the
+    # race window where another thread could insert between check and insert.
 
     # Insert into database
     post = Post(
@@ -213,6 +223,10 @@ def handle_new_submission(
     )
 
     if not state.insert_post(post):
+        return
+
+    if not fcm:
+        logger.warning("FCM not initialized, skipping notification", post_id=parsed.post_id)
         return
 
     # Send FCM notification
@@ -275,14 +289,13 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
 
-    if scheduler_jobs:
-        scheduler.add_job(
-            scheduler_jobs.cleanup_and_poll,
-            trigger=IntervalTrigger(minutes=5),
-            id="cleanup_and_poll",
-            name="Cleanup expired posts",
-            replace_existing=True,
-        )
+    scheduler.add_job(
+        scheduler_jobs.cleanup_and_poll,
+        trigger=IntervalTrigger(minutes=5),
+        id="cleanup_and_poll",
+        name="Cleanup expired posts",
+        replace_existing=True,
+    )
 
     scheduler.start()
     logger.info("APScheduler started")
